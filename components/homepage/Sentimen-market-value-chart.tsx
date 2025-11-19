@@ -16,8 +16,6 @@ function Badge({ children, className = "" }: { children: React.ReactNode; classN
 interface PlayerSentiment {
   name: string
   mentions: number
-  negative: number
-  neutral: number
   positive: number
   marketValue?: number
 }
@@ -33,8 +31,6 @@ export default function PlayerSentimentMarketValue() {
       name: "Bakayoko",
       mentions: 100,
       positive: 82,
-      neutral: 12,
-      negative: 6,
       marketValue: 8.5,
     }
 
@@ -42,8 +38,6 @@ export default function PlayerSentimentMarketValue() {
       name: "Guus Til",
       mentions: 100,
       positive: 20,
-      neutral: 30,
-      negative: 50,
       marketValue: 12,
     }
 
@@ -114,4 +108,4 @@ export default function PlayerSentimentMarketValue() {
       </div>
     </Card>
   )
-}
+}  

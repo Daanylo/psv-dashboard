@@ -6,6 +6,7 @@ import HashtagPerformanceChart from "@/components/homepage/hashtag-performance-c
 import PlayerMentionsOverview from "@/components/homepage/player-mentions-overview"
 import PlayerSentimentMarketValue from "@/components/homepage/Sentimen-market-value-chart"
 import SentimentJourneyChart from "@/components/homepage/sentiment-journey-chart"
+import BrandExposureOverview from "@/components/homepage/brand-exposure-overview"
 
 export default function Home() {
   return (
@@ -85,6 +86,9 @@ export default function Home() {
                 <CardTitle>Brand Exposure This Week</CardTitle>
                 <CardDescription>Sponsor visibility in fan content</CardDescription>
               </CardHeader>
+              <CardContent>
+                <BrandExposureOverview />
+              </CardContent>
             </Card>
           </div>
         </div>

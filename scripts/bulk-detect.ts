@@ -74,39 +74,65 @@ function preprocessImage(img: Image): { tensor: ort.Tensor; scaleX: number; scal
   };
 }
 
-function processOutput(output: ort.Tensor, scaleX: number, scaleY: number, offsetX: number, offsetY: number, confidenceThreshold: number): Detection[] {
-  const data = output.data as Float32Array;
-  const shape = output.dims;
-  
+function processOutput(data: Float32Array, shape: number[], scaleX: number, scaleY: number, offsetX: number, offsetY: number, confidenceThreshold: number): Detection[] {
   const detections: Detection[] = [];
-  const numClasses = classLabels.length;
-  const numPredictions = shape[2];
   
-  for (let i = 0; i < numPredictions; i++) {
-    const classScores: number[] = [];
-    for (let c = 0; c < numClasses; c++) {
-      classScores.push(data[(4 + c) * numPredictions + i]);
+  let numPredictions: number;
+  let numClasses: number;
+  
+  if (shape.length === 3 && shape[0] === 1) {
+    numPredictions = shape[2];
+    numClasses = shape[1] - 4;
+    
+    let maxScoreFound = 0;
+    let maxScoreIndex = -1;
+    
+    for (let i = 0; i < numPredictions; i++) {
+      const cx = data[i];
+      const cy = data[numPredictions + i];
+      const w = data[2 * numPredictions + i];
+      const h = data[3 * numPredictions + i];
+      
+      let maxClassScore = 0;
+      let maxClassId = 0;
+      
+      for (let c = 0; c < numClasses; c++) {
+        const classScore = data[(4 + c) * numPredictions + i];
+        if (classScore > maxClassScore) {
+          maxClassScore = classScore;
+          maxClassId = c;
+        }
+      }
+      
+      if (maxClassScore > maxScoreFound) {
+        maxScoreFound = maxClassScore;
+        maxScoreIndex = i;
+      }
+      
+      if (maxClassScore >= confidenceThreshold && maxClassId < classLabels.length) {
+        const x1 = cx - w / 2;
+        const y1 = cy - h / 2;
+        
+        detections.push({
+          label: classLabels[maxClassId],
+          confidence: maxClassScore,
+          box: {
+            x: (x1 - offsetX) / scaleX,
+            y: (y1 - offsetY) / scaleY,
+            width: w / scaleX,
+            height: h / scaleY,
+          },
+        });
+      }
     }
     
-    const maxScore = Math.max(...classScores);
-    const classIndex = classScores.indexOf(maxScore);
-    
-    if (maxScore >= confidenceThreshold) {
-      const centerX = data[0 * numPredictions + i];
-      const centerY = data[1 * numPredictions + i];
-      const width = data[2 * numPredictions + i];
-      const height = data[3 * numPredictions + i];
-      
-      const x = ((centerX - width / 2) - offsetX) / scaleX;
-      const y = ((centerY - height / 2) - offsetY) / scaleY;
-      const w = width / scaleX;
-      const h = height / scaleY;
-      
-      detections.push({
-        label: classLabels[classIndex],
-        confidence: maxScore,
-        box: { x, y, width: w, height: h },
-      });
+    if (maxScoreIndex >= 0) {
+      console.log(`  Max score ${maxScoreFound.toFixed(4)} at prediction ${maxScoreIndex}`);
+      console.log(`    Box coords: cx=${data[maxScoreIndex].toFixed(2)}, cy=${data[numPredictions + maxScoreIndex].toFixed(2)}, w=${data[2 * numPredictions + maxScoreIndex].toFixed(2)}, h=${data[3 * numPredictions + maxScoreIndex].toFixed(2)}`);
+      for (let c = 0; c < numClasses; c++) {
+        const score = data[(4 + c) * numPredictions + maxScoreIndex];
+        console.log(`    Class ${c} (${classLabels[c]}): ${score.toFixed(6)}`);
+      }
     }
   }
   
@@ -162,21 +188,41 @@ async function detectLogos(imageUrl: string, confidenceThreshold: number): Promi
   const feeds = { images: tensor };
   const results = await model.run(feeds);
   const output = results[Object.keys(results)[0]];
+  const outputData = output.data as Float32Array;
+  const outputShape = output.dims as number[];
   
-  const detections = processOutput(output, scaleX, scaleY, offsetX, offsetY, confidenceThreshold);
-  return nms(detections, 0.45);
+  console.log(`  Output shape: ${outputShape}`);
+  console.log(`  First 20 raw values: ${Array.from(outputData.slice(0, 20)).map(v => v.toFixed(4)).join(', ')}`);
+  
+  const numPredictions = outputShape[2];
+  const startIdx = 4 * numPredictions;
+  console.log(`  Class score start index: ${startIdx}, numPredictions: ${numPredictions}`);
+  console.log(`  Sample class scores at prediction 0-5: ${Array.from(outputData.slice(startIdx, startIdx + 6)).map(v => v.toFixed(4)).join(', ')}`);
+  console.log(`  Sample class scores at prediction 100: ${Array.from(outputData.slice(startIdx + 100, startIdx + 106)).map(v => v.toFixed(4)).join(', ')}`);
+  
+  const detections = processOutput(outputData, outputShape, scaleX, scaleY, offsetX, offsetY, confidenceThreshold);
+  console.log(`  Detections before NMS: ${detections.length}`);
+  const finalDetections = nms(detections, 0.45);
+  console.log(`  Detections after NMS: ${finalDetections.length}`);
+  return finalDetections;
 }
 
 async function main() {
   console.log('Connecting to database...');
   const connection = await mysql.createConnection(DB_CONFIG);
   
-  console.log('Fetching posts...');
-  const [posts] = await connection.execute('SELECT * FROM instagram_posts LIMIT 1000');
+  console.log('Fetching posts without detections...');
+  const [posts] = await connection.execute(`
+    SELECT p.* 
+    FROM instagram_posts p
+    LEFT JOIN logo_detections ld ON p.id = ld.post_id
+    WHERE ld.id IS NULL
+    LIMIT 1000
+  `);
   const postArray = posts as any[];
   
-  console.log(`Found ${postArray.length} posts`);
-  console.log('Starting bulk detection with 10% confidence threshold...\n');
+  console.log(`Found ${postArray.length} posts without detections`);
+  console.log('Starting bulk detection with 1% confidence threshold (onnxruntime-node)...\n');
   
   let processed = 0;
   let failed = 0;
@@ -186,7 +232,7 @@ async function main() {
       console.log(`[${processed + 1}/${postArray.length}] Processing post ${post.id} (${post.shortcode})...`);
       
       const imageUrl = `https://www.instagram.com/p/${post.shortcode}/media/?size=l`;
-      const detections = await detectLogos(imageUrl, 0.5);
+      const detections = await detectLogos(imageUrl, 0.01);
       
       console.log(`  Found ${detections.length} detections`);
       
@@ -204,7 +250,7 @@ async function main() {
             det.box.width,
             det.box.height,
             'bulk_script',
-            0.1
+            0.01
           );
         });
         

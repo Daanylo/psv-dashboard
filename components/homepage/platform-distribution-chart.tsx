@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { BarChart, Bar, XAxis, YAxis, Cell } from "recharts"
-import { ChartContainer, ChartConfig, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import { PieChart, Pie, Cell, Legend, ResponsiveContainer } from "recharts"
+import { ChartContainer, ChartConfig, ChartTooltip } from "@/components/ui/chart"
 
 interface PlatformDistribution {
   platform: string
@@ -65,91 +65,74 @@ export default function PlatformDistributionChart() {
     )
   }
 
-  // Platform specifieke kleuren voor in de charts
+  // Platform specifieke kleuren voor in de charts (zoals op afbeelding)
   const platformColors: Record<string, string> = {
-    TikTok: "#000000", 
-    Facebook: "#1877F2", 
-    Instagram: "#E1306C", 
-    YouTube: "#FF0000",
+    Instagram: "#9333EA", // Paars
+    TikTok: "#F59E0B", // Licht oranje/beige
+    YouTube: "#EF4444", // Licht rood/salmon
+    Facebook: "#3B82F6", // Licht blauw
   }
 
-  // Chart data formatten voor Recharts
+  // Chart data formatten voor Recharts PieChart
   const chartData = data.map((item) => ({
-    platform: item.platform,
+    name: item.platform,
     value: item.percentage,
     count: item.count,
-    fill: platformColors[item.platform],
+    fill: platformColors[item.platform] || "#888888",
   }))
 
   return (
-    <div>
-      <ChartContainer config={chartConfig} className="h-64 w-full">
-        <BarChart
-          data={chartData}
-          layout="vertical"
-          margin={{ top: 20, right: 60, left: 20, bottom: 5 }}
-        >
-          <ChartTooltip
-            content={({ active, payload }) => {
-              if (!active || !payload || !payload[0]) return null
-              const data = payload[0].payload
-              const value = data.value ?? 0
-              const platformColor = data.fill || platformColors[data.platform]
-              return (
-                <div className="rounded-lg border bg-background px-3 py-2 shadow-md">
-                  <div className="font-semibold mb-2">{data.platform}</div>
-                  <div className="space-y-1 text-sm">
-                    <div>{data.count.toLocaleString()} comments</div>
-                    <div>{value.toFixed(1)}%</div>
+    <div className="flex items-center gap-8 w-full">
+      <ChartContainer config={chartConfig} className="h-[400px] w-[400px] flex-shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              outerRadius={140}
+              innerRadius={85}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <ChartTooltip
+              content={({ active, payload }) => {
+                if (!active || !payload || !payload[0]) return null
+                const data = payload[0].payload
+                const value = data.value ?? 0
+                return (
+                  <div className="rounded-lg border bg-background px-3 py-2 shadow-md">
+                    <div className="font-semibold mb-2">{data.name}</div>
+                    <div className="space-y-1 text-sm">
+                      <div>{data.count.toLocaleString()} comments</div>
+                      <div>{value.toFixed(1)}%</div>
+                    </div>
                   </div>
-                </div>
-              )
-            }}
-          />
-          <XAxis type="number" hide domain={[0, 100]} />
-          <YAxis
-            type="category"
-            dataKey="platform"
-            width={80}
-            tick={{ fontSize: 12 }}
-          />
-          <Bar
-            dataKey="value"
-            radius={[0, 4, 4, 0]}
-            label={({ value, x, y, width, height }) => {
-              const displayValue = value ?? 0
-              const xPos = x + width + 5
-              const yPos = y + height / 2
-              return (
-                <text
-                  x={xPos}
-                  y={yPos}
-                  fill="currentColor"
-                  textAnchor="start"
-                  dominantBaseline="middle"
-                  className="text-xs font-medium"
-                >
-                  {displayValue.toFixed(1)}%
-                </text>
-              )
-            }}
-          >
-            {chartData.map((entry) => (
-              <Cell
-                key={`cell-${entry.platform}`}
-                fill={entry.fill}
-              />
-            ))}
-          </Bar>
-        </BarChart>
+                )
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
       </ChartContainer>
-      {total > 0 && (
-        <div className="text-center mt-4">
-          <p className="text-sm text-muted-foreground">
-            Total engagement: <span className="font-semibold text-foreground">{total.toLocaleString()} interactions</span>
-          </p>
-        </div>
-      )}
+      <div className="flex flex-col gap-4 flex-shrink-0 min-w-[150px]">
+        {chartData.map((entry, index) => (
+          <div key={index} className="flex items-center gap-3">
+            <div
+              className="w-5 h-5 rounded-sm flex-shrink-0"
+              style={{ backgroundColor: entry.fill }}
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-base font-medium">{entry.name}</span>
+              <span className="text-sm text-muted-foreground">{entry.value.toFixed(0)}%</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

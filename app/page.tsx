@@ -40,7 +40,6 @@ export default function Home() {
           </Card>
         </div>
         <div>
-          <div className="mb-4">Sentiment Journey</div>
           <Card className="w-full mb-8">
             <CardHeader>
               <CardTitle>How it's Changing</CardTitle>
@@ -52,7 +51,6 @@ export default function Home() {
           </Card>
         </div>
         <div>
-          <div className="mb-4">Quick Metrics</div>
           <div className="grid grid-cols-2 gap-6">
             <Card>
               <CardHeader>
@@ -65,11 +63,11 @@ export default function Home() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Top Performing Hashtags</CardTitle>
-                <CardDescription>Content engagement by hashtag</CardDescription>
+                <CardTitle>Brand Exposure This Week</CardTitle>
+                <CardDescription>Sponsor visibility in fan content</CardDescription>
               </CardHeader>
               <CardContent>
-                <HashtagPerformanceChart />
+                <BrandExposureOverview />
               </CardContent>
             </Card>
             <Card>
@@ -82,21 +80,20 @@ export default function Home() {
               </CardContent>
             </Card>
             <Card>
-              <CardHeader>
-                <CardTitle>Brand Exposure This Week</CardTitle>
-                <CardDescription>Sponsor visibility in fan content</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BrandExposureOverview />
-              </CardContent>
             </Card>
           </div>
         </div>
         <div className="mt-8">
-          <div className="mb-4">Recommended Action Based on Data</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card />
-            <Card />
+          <div className="grid grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Performing Hashtags</CardTitle>
+                <CardDescription>Content engagement by hashtag</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <HashtagPerformanceChart />
+              </CardContent>
+            </Card>
             <Card />
           </div>
         </div>

@@ -10,7 +10,7 @@ export interface SentimentJourneyData {
 
 export async function GET() {
   try {
-    const filePath = path.join(process.cwd(), 'public', 'data', 'comments_combined.csv')
+    const filePath = path.join(process.cwd(), 'public', 'data', 'comments_combined_temp.csv')
     const csvText = fs.readFileSync(filePath, 'utf-8')
     const lines = csvText.split('\n').slice(1) // Skip header
     
@@ -40,9 +40,9 @@ export async function GET() {
       }
       columns.push(current.trim()) // Add last column
       
-      if (columns.length < 9) continue
+      if (columns.length < 10) continue // We need at least 10 columns (date is index 9)
       
-      const dateStr = columns[8]?.trim() // date is column 8 (last column)
+      const dateStr = columns[9]?.trim() // date is column 9 (last column, index 9)
       const posSentimentStr = columns[5]?.trim() // pos_sentiment (%) is column 5
       
       if (!dateStr || dateStr === 'date' || !posSentimentStr) continue
@@ -51,34 +51,58 @@ export async function GET() {
       const posSentiment = parseFloat(posSentimentStr)
       if (isNaN(posSentiment)) continue
       
-      // Parse datum (formaat: "2025-08-04 13:15:00" of "2025-09-01 08:51:07+00:00")
-      try {
-        // Verwijder timezone info als die er is
-        const cleanDateStr = dateStr.replace(/\+00:00$/, '')
-        const date = new Date(cleanDateStr)
-        
+      // Valideer en parse datum - alleen YYYY-MM-DD formaat accepteren
+      // Check of het een geldige datum string is (YYYY-MM-DD)
+      const datePattern = /^\d{4}-\d{2}-\d{2}$/
+      if (!datePattern.test(dateStr)) {
+        // Probeer te parsen als het een datum met tijd is
+        try {
+          const cleanDateStr = dateStr.replace(/\+00:00$/, '').split(' ')[0] // Neem alleen het datum deel
+          if (!datePattern.test(cleanDateStr)) {
+            continue // Skip als het nog steeds geen geldig formaat is
+          }
+          const date = new Date(cleanDateStr)
+          if (isNaN(date.getTime())) {
+            continue
+          }
+          const dateOnly = date.toISOString().split('T')[0]
+          
+          uniqueDates.add(dateOnly)
+          if (!dateMap[dateOnly]) {
+            dateMap[dateOnly] = { totalPosSentiment: 0, count: 0 }
+          }
+          dateMap[dateOnly].totalPosSentiment += posSentiment
+          dateMap[dateOnly].count += 1
+        } catch (error) {
+          continue
+        }
+      } else {
+        // Direct geldig YYYY-MM-DD formaat
+        const date = new Date(dateStr)
         if (isNaN(date.getTime())) {
           continue
         }
+        const dateOnly = date.toISOString().split('T')[0]
         
-        const dateOnly = date.toISOString().split('T')[0] // YYYY-MM-DD format
         uniqueDates.add(dateOnly)
-        
         if (!dateMap[dateOnly]) {
           dateMap[dateOnly] = { totalPosSentiment: 0, count: 0 }
         }
-        
         dateMap[dateOnly].totalPosSentiment += posSentiment
         dateMap[dateOnly].count += 1
-      } catch (error) {
-        // Skip invalid dates
-        continue
       }
     }
     
-    // Sorteer datums en neem de laatste 14 unieke datums
+    // Sorteer alle unieke datums chronologisch
     const sortedDates = Array.from(uniqueDates).sort()
-    const last14Dates = sortedDates.slice(-14)
+    if (sortedDates.length === 0) {
+      return NextResponse.json([])
+    }
+    
+    // Pak de laatste 14 datums (de meest recente 14 datums)
+    const last14Dates = sortedDates.length >= 14 
+      ? sortedDates.slice(-14) 
+      : sortedDates // Als er minder dan 14 datums zijn, gebruik alle datums
     
     // Converteer naar array met gemiddelde positieve sentiment per dag
     // Converteer percentage (0-100) naar sentiment range (-1.0 tot 1.0)

@@ -6,23 +6,36 @@ export interface SentimentJourneyData {
   date: string
   sentiment: number
   commentCount: number
+  match?: {
+    home: string
+    away: string
+    result: string
+    competition: string
+  }
 }
 
 export async function GET() {
   try {
-    const filePath = path.join(process.cwd(), 'public', 'data', 'comments_combined_temp.csv')
+    const filePath = path.join(process.cwd(), 'public', 'data', 'comments.csv')
     const csvText = fs.readFileSync(filePath, 'utf-8')
-    const lines = csvText.split('\n').slice(1) // Skip header
+    const lines = csvText.split('\n').slice(1)
     
-    // Map voor datum -> { totalPosSentiment, count }
-    const dateMap: Record<string, { totalPosSentiment: number; count: number }> = {}
-    const uniqueDates = new Set<string>()
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const startDate = new Date(today)
+    startDate.setDate(today.getDate() - 7)
+    const endDate = new Date(today)
+    endDate.setDate(today.getDate() + 6)
+
+    const matchesFilePath = path.join(process.cwd(), 'public', 'data', 'matches.csv')
+    const matchesText = fs.readFileSync(matchesFilePath, 'utf-8')
+    const matchesLines = matchesText.split('\n').slice(1)
     
-    // Verzamel alle datums en bereken gemiddelde positieve sentiment per dag
-    for (const line of lines) {
+    const matchesMap: Record<string, { home: string; away: string; result: string; competition: string }> = {}
+    
+    for (const line of matchesLines) {
       if (!line.trim()) continue
       
-      // Parse CSV line (handling quoted fields)
       const columns: string[] = []
       let current = ''
       let inQuotes = false
@@ -38,94 +51,166 @@ export async function GET() {
           current += char
         }
       }
-      columns.push(current.trim()) // Add last column
+      columns.push(current.trim())
       
-      if (columns.length < 10) continue // We need at least 10 columns (date is index 9)
+      if (columns.length < 7) continue
       
-      const dateStr = columns[9]?.trim() // date is column 9 (last column, index 9)
-      const posSentimentStr = columns[5]?.trim() // pos_sentiment (%) is column 5
+      const dateStr = columns[0]?.trim()
+      const home = columns[3]?.trim()
+      const away = columns[4]?.trim()
+      const result = columns[5]?.trim()
+      const competition = columns[2]?.trim()
       
-      if (!dateStr || dateStr === 'date' || !posSentimentStr) continue
+      if (!dateStr || !home || !away || !result) continue
       
-      // Parse positieve sentiment
-      const posSentiment = parseFloat(posSentimentStr)
-      if (isNaN(posSentiment)) continue
-      
-      // Valideer en parse datum - alleen YYYY-MM-DD formaat accepteren
-      // Check of het een geldige datum string is (YYYY-MM-DD)
-      const datePattern = /^\d{4}-\d{2}-\d{2}$/
-      if (!datePattern.test(dateStr)) {
-        // Probeer te parsen als het een datum met tijd is
-        try {
-          const cleanDateStr = dateStr.replace(/\+00:00$/, '').split(' ')[0] // Neem alleen het datum deel
-          if (!datePattern.test(cleanDateStr)) {
-            continue // Skip als het nog steeds geen geldig formaat is
-          }
-          const date = new Date(cleanDateStr)
-          if (isNaN(date.getTime())) {
-            continue
-          }
-          const dateOnly = date.toISOString().split('T')[0]
-          
-          uniqueDates.add(dateOnly)
-          if (!dateMap[dateOnly]) {
-            dateMap[dateOnly] = { totalPosSentiment: 0, count: 0 }
-          }
-          dateMap[dateOnly].totalPosSentiment += posSentiment
-          dateMap[dateOnly].count += 1
-        } catch (error) {
-          continue
-        }
-      } else {
-        // Direct geldig YYYY-MM-DD formaat
-        const date = new Date(dateStr)
-        if (isNaN(date.getTime())) {
-          continue
-        }
-        const dateOnly = date.toISOString().split('T')[0]
+      try {
+        const cleanDateStr = dateStr.replace(/\+00:00$/, '').split(' ')[0]
+        const dateParts = cleanDateStr.split('-')
+        if (dateParts.length !== 3) continue
         
-        uniqueDates.add(dateOnly)
-        if (!dateMap[dateOnly]) {
-          dateMap[dateOnly] = { totalPosSentiment: 0, count: 0 }
-        }
-        dateMap[dateOnly].totalPosSentiment += posSentiment
-        dateMap[dateOnly].count += 1
+        const year = parseInt(dateParts[0], 10)
+        const month = parseInt(dateParts[1], 10) - 1
+        const day = parseInt(dateParts[2], 10)
+        
+        if (isNaN(year) || isNaN(month) || isNaN(day)) continue
+        
+        const dateMidnight = new Date(year, month, day)
+        if (dateMidnight < startDate || dateMidnight > endDate) continue
+        
+        const dateOnly = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        matchesMap[dateOnly] = { home, away, result, competition: competition || '' }
+      } catch (error) {
+        continue
       }
     }
     
-    // Sorteer alle unieke datums chronologisch
-    const sortedDates = Array.from(uniqueDates).sort()
-    if (sortedDates.length === 0) {
+    const dateMap: Record<string, { 
+      dayPositive: number; 
+      dayNegative: number; 
+      dayTotal: number 
+    }> = {}
+    
+    for (const line of lines) {
+      if (!line.trim()) continue
+      
+      const columns: string[] = []
+      let current = ''
+      let inQuotes = false
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]
+        if (char === '"') {
+          inQuotes = !inQuotes
+        } else if (char === ',' && !inQuotes) {
+          columns.push(current.trim())
+          current = ''
+        } else {
+          current += char
+        }
+      }
+      columns.push(current.trim())
+      
+      if (columns.length < 8) continue
+      
+      const dateStr = columns[2]?.trim()
+      const sentimentLabel = columns[7]?.trim().toLowerCase()
+      
+      if (!dateStr || dateStr === 'date' || !sentimentLabel) continue
+      
+      let dateOnly: string
+      try {
+        const cleanDateStr = dateStr.replace(/\+00:00$/, '').split(' ')[0]
+        const dateParts = cleanDateStr.split('-')
+        if (dateParts.length !== 3) {
+          continue
+        }
+        
+        const year = parseInt(dateParts[0], 10)
+        const month = parseInt(dateParts[1], 10) - 1
+        const day = parseInt(dateParts[2], 10)
+        
+        if (isNaN(year) || isNaN(month) || isNaN(day)) {
+          continue
+        }
+        
+        const dateMidnight = new Date(year, month, day)
+        if (dateMidnight < startDate || dateMidnight > endDate) {
+          continue
+        }
+        
+        dateOnly = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      } catch (error) {
+        continue
+      }
+      
+      if (!dateMap[dateOnly]) {
+        dateMap[dateOnly] = { dayPositive: 0, dayNegative: 0, dayTotal: 0 }
+      }
+      
+      dateMap[dateOnly].dayTotal += 1
+      if (sentimentLabel === 'positive') {
+        dateMap[dateOnly].dayPositive += 1
+      } else if (sentimentLabel === 'negative') {
+        dateMap[dateOnly].dayNegative += 1
+      }
+    }
+    
+    const allDatesInRange: string[] = []
+    const currentDate = new Date(startDate)
+    while (currentDate <= endDate) {
+      const year = currentDate.getFullYear()
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0')
+      const day = String(currentDate.getDate()).padStart(2, '0')
+      const dateStr = `${year}-${month}-${day}`
+      allDatesInRange.push(dateStr)
+      currentDate.setDate(currentDate.getDate() + 1)
+    }
+    
+    if (allDatesInRange.length === 0) {
       return NextResponse.json([])
     }
-    
-    // Pak de laatste 14 datums (de meest recente 14 datums)
-    const last14Dates = sortedDates.length >= 14 
-      ? sortedDates.slice(-14) 
-      : sortedDates // Als er minder dan 14 datums zijn, gebruik alle datums
-    
-    // Converteer naar array met gemiddelde positieve sentiment per dag
-    // Converteer percentage (0-100) naar sentiment range (-1.0 tot 1.0)
-    // We gebruiken: sentiment = (posSentiment% / 100) * 2 - 1
-    // Dit geeft: 0% -> -1.0, 50% -> 0.0, 100% -> 1.0
-    const result: SentimentJourneyData[] = last14Dates.map((date) => {
+
+    let maxTotal = 0
+    allDatesInRange.forEach(date => {
       const data = dateMap[date]
-      if (!data || data.count === 0) {
-        return {
-          date,
-          sentiment: 0,
-          commentCount: 0,
-        }
+      if (data && data.dayTotal > maxTotal) {
+        maxTotal = data.dayTotal
       }
+    })
+
+    const unscaledScores: Record<string, number> = {}
+    let minUnscaled = Infinity
+    let maxUnscaled = -Infinity
+
+    allDatesInRange.forEach(date => {
+      const data = dateMap[date]
+      if (data && data.dayTotal > 0) {
+        const unscaled = ((data.dayPositive - data.dayNegative) / data.dayTotal) * Math.sqrt(data.dayTotal / maxTotal)
+        unscaledScores[date] = unscaled
+        
+        if (unscaled < minUnscaled) minUnscaled = unscaled
+        if (unscaled > maxUnscaled) maxUnscaled = unscaled
+      } else {
+        unscaledScores[date] = 0
+      }
+    })
+
+    const result: SentimentJourneyData[] = allDatesInRange.map((date) => {
+      const data = dateMap[date]
+      const match = matchesMap[date]
+      const commentCount = data ? data.dayTotal : 0
       
-      const avgPosSentiment = data.totalPosSentiment / data.count // Percentage 0-100
-      // Converteer naar -1.0 tot 1.0 range
-      const sentiment = (avgPosSentiment / 100) * 2 - 1
+      let scaledSentiment = 0.0
+      if (commentCount > 0 && maxUnscaled !== minUnscaled) {
+        const unscaled = unscaledScores[date]
+        scaledSentiment = ((unscaled - minUnscaled) / (maxUnscaled - minUnscaled)) * 2 - 1
+      }
       
       return {
         date,
-        sentiment,
-        commentCount: data.count,
+        sentiment: scaledSentiment,
+        commentCount,
+        ...(match && { match }),
       }
     })
     
@@ -138,4 +223,3 @@ export async function GET() {
     )
   }
 }
-

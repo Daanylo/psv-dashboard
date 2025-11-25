@@ -36,8 +36,8 @@ export default function HashtagPerformanceChart() {
         const hashtags = await response.json()
         // Check if it's an array
         if (Array.isArray(hashtags)) {
-          // Take top 5
-          setData(hashtags.slice(0, 5))
+          // Take top 4
+          setData(hashtags.slice(0, 4))
         } else {
           console.error("Invalid response format:", hashtags)
         }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { ArrowUp, ArrowDown, Minus, Smile, Frown, DollarSign } from "lucide-react";
+import { ArrowUp, ArrowDown, Minus, Smile, Frown, DollarSign, User } from "lucide-react";
 
 interface PlayerValue {
   name: string;
@@ -38,17 +38,17 @@ export default function SentimentVsMarketValue() {
     net: p.positiveMentions - p.negativeMentions
   }));
 
-  // SAME LOGIC — DO NOT CHANGE
+  // SAME PICKING LOGIC
   const mostUndervalued = [...withNet]
     .sort((a, b) => (b.net !== a.net ? b.net - a.net : a.marketValue - b.marketValue))[0];
 
   const mostOvervalued = [...withNet]
     .sort((a, b) => (a.net !== b.net ? a.net - b.net : b.marketValue - a.marketValue))[0];
 
-  // HARD-CODE DISPLAY ORDER: TOP = undervalued, BOTTOM = overvalued
+  // HARD-CODE DISPLAY ORDER + custom status
   const display = [
-    { ...mostUndervalued, forcedStatus: "Undervalued" },
-    { ...mostOvervalued, forcedStatus: "Overvalued" }
+    { ...mostUndervalued, forcedStatus: "Undervalued", forcedMood: "normal" },
+    { ...mostOvervalued, forcedStatus: "Overvalued", forcedMood: "sad" }
   ];
 
   return (
@@ -60,10 +60,15 @@ export default function SentimentVsMarketValue() {
       <div className="space-y-4">
         {display.map((p, i) => {
           const net = p.net;
+
+          // NORMAL SENTIMENT ICONS FOR TOP CARD
           const hasPos = net > 0;
           const hasNeg = net < 0;
 
-          // HARD-FORCED STATUS (Balanced removed)
+          // BOTTOM CARD ALWAYS SAD + DOWN ARROW
+          const forceSad = p.forcedMood === "sad";
+
+          // LABEL ALWAYS BASED ON forcedStatus
           const shownStatus = p.forcedStatus;
 
           return (
@@ -76,20 +81,17 @@ export default function SentimentVsMarketValue() {
                 {/* LEFT SIDE */}
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-white shadow flex items-center justify-center">
-                    {hasPos ? (
-                      <ArrowUp className="text-blue-600" size={20} />
-                    ) : hasNeg ? (
-                      <ArrowDown className="text-blue-600" size={20} />
-                    ) : (
-                      <Minus className="text-blue-600" size={20} />
-                    )}
+                    <User className="text-gray-500" size={26} />
                   </div>
+
 
                   <div className="flex flex-col">
                     <span className="font-semibold">{p.name}</span>
 
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      {hasPos ? (
+                      {forceSad ? (
+                        <Frown size={18} className="text-gray-600" />
+                      ) : hasPos ? (
                         <Smile size={18} className="text-gray-600" />
                       ) : hasNeg ? (
                         <Frown size={18} className="text-gray-600" />
@@ -104,7 +106,7 @@ export default function SentimentVsMarketValue() {
                   </div>
                 </div>
 
-                {/* RIGHT SIDE */}
+                {/* RIGHT SIDE LABEL */}
                 <div className="flex flex-col items-end">
                   <span
                     className={`px-3 py-1 rounded-full text-sm font-medium ${

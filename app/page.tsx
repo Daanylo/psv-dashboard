@@ -30,9 +30,6 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader>
-              <CardTitle>Sentiment vs Market Value</CardTitle>
-            </CardHeader>
 
             <CardContent>
               <PlayerSentimentMarketValue />

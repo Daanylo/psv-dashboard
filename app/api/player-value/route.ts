@@ -133,10 +133,6 @@ ${commentsList}`
           .filter((idx: number) => idx >= 1 && idx <= comments.length)
           .map((idx: number) => comments[idx - 1]);
 
-        console.log("PLAYER:", playerName);
-      console.log("MATCHED INDICES:", matchIndices);
-      console.log("MATCHED COMMENTS:", matching.map((m: { comment: string; negative: number; neutral: number; positive: number }) => m.comment));
-
 
         if (matching.length === 0) return null;
 

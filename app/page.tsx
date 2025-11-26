@@ -8,6 +8,7 @@ import PlayerSentimentMarketValue from "@/components/homepage/Sentimen-market-va
 import SentimentJourneyChart from "@/components/homepage/sentiment-journey-chart"
 import BrandExposureOverview from "@/components/homepage/brand-exposure-overview"
 import MostDiscussedTopic from "@/components/homepage/most-discussed-topic"
+import BestContentTypeEngagement from "@/components/homepage/best-content-type-engagement"
 
 export default function Home() {
   return (
@@ -78,6 +79,13 @@ export default function Home() {
               </CardContent>
             </Card>
             <Card>
+              <CardHeader>
+                <CardTitle>Best Content Type Based on Engagement</CardTitle>
+                <CardDescription>Content performance based on fan interactions</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <BestContentTypeEngagement />
+              </CardContent>
             </Card>
           </div>
         </div>

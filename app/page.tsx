@@ -80,7 +80,7 @@ export default function Home() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Best Content Type for Engagement</CardTitle>
+                <CardTitle>Best Content Type Based on Engagement</CardTitle>
                 <CardDescription>Content performance based on fan interactions</CardDescription>
               </CardHeader>
               <CardContent>

@@ -8,7 +8,7 @@ import PlayerSentimentMarketValue from "@/components/homepage/Sentimen-market-va
 import SentimentJourneyChart from "@/components/homepage/sentiment-journey-chart"
 import BrandExposureOverview from "@/components/homepage/brand-exposure-overview"
 import MostDiscussedTopic from "@/components/homepage/most-discussed-topic"
-import BestContentTypeEngagement from "@/components/homepage/best-content-type-engagement"
+import BestContentTypeEngagement from "@/components/homepage/best-content-type"
 
 export default function Home() {
   return (

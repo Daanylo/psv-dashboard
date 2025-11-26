@@ -163,14 +163,14 @@ export default function SentimentGauge() {
                           y={(viewBox.cy || 0) - 16}
                           className="fill-foreground text-2xl font-bold"
                         >
-                          {displayData.totalComments.toLocaleString()}
+                          {displayData.averagePositiveSentiment.toFixed(1)}%
                         </tspan>
                         <tspan
                           x={viewBox.cx}
                           y={(viewBox.cy || 0) + 4}
                           className="fill-muted-foreground text-sm"
                         >
-                          Comments analyzed
+                          Positive
                         </tspan>
                       </text>
                     </g>
@@ -204,18 +204,7 @@ export default function SentimentGauge() {
       </ChartContainer>
       <div className="text-center mt-2">
         <p className="text-sm text-muted-foreground">
-          General mood:{' '}
-          {data ? (
-            data.averagePositiveSentiment > 50 ? (
-              <span style={{ color: chartConfig.positive.color }}>Positive</span>
-            ) : data.averageNegativeSentiment > 50 ? (
-              <span style={{ color: chartConfig.negative.color }}>Negative</span>
-            ) : (
-              <span style={{ color: chartConfig.neutral.color }}>Neutral</span>
-            )
-          ) : (
-            '...'
-          )}
+          {displayData.totalComments.toLocaleString()} comments analyzed
         </p>
       </div>
     </div>

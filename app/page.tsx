@@ -7,6 +7,7 @@ import PlayerMentionsOverview from "@/components/homepage/player-mentions-overvi
 import PlayerSentimentMarketValue from "@/components/homepage/Sentimen-market-value-chart"
 import SentimentJourneyChart from "@/components/homepage/sentiment-journey-chart"
 import BrandExposureOverview from "@/components/homepage/brand-exposure-overview"
+import MostDiscussedTopic from "@/components/homepage/most-discussed-topic"
 
 export default function Home() {
   return (
@@ -91,7 +92,15 @@ export default function Home() {
                 <HashtagPerformanceChart />
               </CardContent>
             </Card>
-            <Card />
+            <Card>
+              <CardHeader>
+                <CardTitle>The Most Discussed Topics</CardTitle>
+                <CardDescription>Topics generating the highest fan discussion</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MostDiscussedTopic />
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>

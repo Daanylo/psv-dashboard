@@ -184,9 +184,9 @@ ${commentsList}`
 
       let status: "Undervalued" | "Overvalued" | "Balanced";
 
-      if (p.positiveMentions > p.negativeMentions && mv < 10) {
+      if (p.positiveMentions > p.negativeMentions && mv < 8) {
         status = "Undervalued";
-      } else if (p.negativeMentions > p.positiveMentions && mv > 10) {
+      } else if (p.negativeMentions > p.positiveMentions && mv > 8) {
         status = "Overvalued";
       } else {
         status = "Balanced";

@@ -8,7 +8,12 @@ on:
 env:
   AZURE_WEBAPP_NAME: psv-dashboard-dev
   NODE_VERSION: '22.x'
-
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  DB_HOST: ${{ secrets.DB_HOST }}
+  DB_PORT: ${{ secrets.DB_PORT }}
+  DB_USER: ${{ secrets.DB_USER }}
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  DB_NAME: ${{ secrets.DB_NAME }}
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest

@@ -23,9 +23,8 @@ export async function GET() {
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const startDate = new Date(today)
-    startDate.setDate(today.getDate() - 7)
-    const endDate = new Date(today)
-    endDate.setDate(today.getDate() + 6)
+    startDate.setDate(today.getDate() - 13) // 13 dagen geleden + vandaag = 14 dagen
+    const endDate = new Date(today) // Vandaag is de einddatum
 
     const matchesFilePath = path.join(process.cwd(), 'public', 'data', 'matches.csv')
     const matchesText = fs.readFileSync(matchesFilePath, 'utf-8')

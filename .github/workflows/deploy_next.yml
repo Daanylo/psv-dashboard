@@ -32,9 +32,6 @@ jobs:
           npm ci
           npm run build
 
-      - name: Clean up for deployment
-        run: rm -rf node_modules
-
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
         with:

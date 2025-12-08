@@ -143,6 +143,10 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  .font-psv-branding {
+    font-family: var(--font-psv-branding);
+  }
 }
 
 @layer utilities {

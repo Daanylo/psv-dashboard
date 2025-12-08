@@ -4,7 +4,7 @@ import SentimentGauge from "@/components/homepage/sentiment-gauge"
 import PlayerSentimentChart from "@/components/homepage/player-sentiment-chart"
 import HashtagPerformanceChart from "@/components/homepage/hashtag-performance-chart"
 import PlayerMentionsOverview from "@/components/homepage/player-mentions-overview"
-import PlayerSentimentMarketValue from "@/components/homepage/Sentimen-market-value-chart"
+import PlayerSentimentMarketValue from "@/components/homepage/sentiment-market-value-chart"
 import SentimentJourneyChart from "@/components/homepage/sentiment-journey-chart"
 import BrandExposureOverview from "@/components/homepage/brand-exposure-overview"
 import MostDiscussedTopic from "@/components/homepage/most-discussed-topic"
@@ -15,24 +15,24 @@ export default function Home() {
     <div className="flex flex-1 px-6 py-8">
       <div className="w-full max-w-screen-2xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardHeader>
+          <Card className="flex flex-col">
+            <CardHeader className="items-center pb-0">
               <CardTitle>Fan Sentiment Gauge</CardTitle>
             </CardHeader>
-            <CardContent>
-                <SentimentGauge />
-            </CardContent>
+            <SentimentGauge />
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Top Players This Week Around Social Media</CardTitle>
+              <CardTitle>Player Mentions Overview</CardTitle>
             </CardHeader>
             <CardContent>
                 <PlayerMentionsOverview />
             </CardContent>
           </Card>
           <Card>
-
+            <CardHeader>
+              <CardTitle>Sentiment vs Market Value</CardTitle>
+            </CardHeader>
             <CardContent>
               <PlayerSentimentMarketValue />
             </CardContent>

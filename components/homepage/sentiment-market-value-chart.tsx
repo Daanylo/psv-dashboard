@@ -52,51 +52,46 @@ export default function SentimentVsMarketValue() {
   ];
 
   return (
-    <Card className="p-4 border-none shadow-none bg-transparent">
-      <h2 className="font-semibold text-lg mb-2">
-        Sentiment vs Market Value →
-      </h2>
+    <div className="space-y-2">
+      {display.map((p, i) => {
+        const net = p.net;
 
-      <div className="space-y-4">
-        {display.map((p, i) => {
-          const net = p.net;
+        // NORMAL SENTIMENT ICONS FOR TOP CARD
+        const hasPos = net > 0;
+        const hasNeg = net < 0;
 
-          // NORMAL SENTIMENT ICONS FOR TOP CARD
-          const hasPos = net > 0;
-          const hasNeg = net < 0;
+        // BOTTOM CARD ALWAYS SAD + DOWN ARROW
+        const forceSad = p.forcedMood === "sad";
 
-          // BOTTOM CARD ALWAYS SAD + DOWN ARROW
-          const forceSad = p.forcedMood === "sad";
+        // LABEL ALWAYS BASED ON forcedStatus
+        const shownStatus = p.forcedStatus;
 
-          // LABEL ALWAYS BASED ON forcedStatus
-          const shownStatus = p.forcedStatus;
+        return (
+          <Card
+            key={i}
+            className="min-h-[88px] bg-[#f7f7f7] p-4 rounded-xl border border-gray-200 shadow-sm"
+          >
+            <div className="flex items-center justify-between">
 
-          return (
-            <Card
-              key={i}
-              className="bg-[#f7f7f7] p-6 rounded-xl border border-gray-200 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-
-                {/* LEFT SIDE */}
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-white shadow flex items-center justify-center">
-                    <User className="text-gray-500" size={26} />
-                  </div>
+              {/* LEFT SIDE */}
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center">
+                  <User className="text-white" size={20} />
+                </div>
 
 
-                  <div className="flex flex-col">
+                <div className="flex flex-col">
                     <span className="font-semibold">{p.name}</span>
 
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       {forceSad ? (
-                        <Frown size={18} className="text-gray-600" />
+                        <Frown size={16} className="text-gray-600" />
                       ) : hasPos ? (
-                        <Smile size={18} className="text-gray-600" />
+                        <Smile size={16} className="text-gray-600" />
                       ) : hasNeg ? (
-                        <Frown size={18} className="text-gray-600" />
+                        <Frown size={16} className="text-gray-600" />
                       ) : (
-                        <Minus size={16} className="text-gray-600" />
+                        <Minus size={14} className="text-gray-600" />
                       )}
 
                       <span>
@@ -118,17 +113,16 @@ export default function SentimentVsMarketValue() {
                     {shownStatus}
                   </span>
 
-                  <div className="mt-2 flex items-center gap-1 text-sm font-medium">
-                    <DollarSign size={18} className="text-gray-700" />
+                  <div className="mt-1 flex items-center gap-1 text-sm font-medium">
+                    <DollarSign size={16} className="text-gray-700" />
                     <span>Market Value: €{p.marketValue.toFixed(1)}M</span>
                   </div>
                 </div>
 
               </div>
             </Card>
-          );
-        })}
-      </div>
-    </Card>
+        );
+      })}
+    </div>
   );
 }

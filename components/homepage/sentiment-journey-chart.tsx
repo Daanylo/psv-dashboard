@@ -4,16 +4,19 @@ import { useEffect, useState } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts"
 import { ChartContainer, ChartConfig, ChartTooltip } from "@/components/ui/chart"
 
-interface SentimentJourneyData {
+type JourneyEvent = {
+  title: string
+  competition?: string
+  home?: string
+  away?: string
+  result?: string
+  time?: string
+}
+
+type JourneyDay = {
   date: string
   sentiment: number
-  commentCount: number
-  match?: {
-    home: string
-    away: string
-    result: string
-    competition: string
-  }
+  events: JourneyEvent[]
 }
 
 const chartConfig = {
@@ -24,23 +27,26 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export default function SentimentJourneyChart() {
-  const [data, setData] = useState<SentimentJourneyData[]>([])
+  const [data, setData] = useState<JourneyDay[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadData() {
       try {
-        const response = await fetch('/api/sentiment-journey')
+        const response = await fetch("/api/new/sentiment-brand/sentiment-journey", {
+          cache: "no-store",
+        })
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || 'Failed to fetch sentiment journey')
+          throw new Error(errorData.error || "Failed to fetch sentiment journey")
         }
         const journeyData = await response.json()
-        if (Array.isArray(journeyData)) {
-          setData(journeyData)
-        } else {
-          console.error("Invalid response format:", journeyData)
-        }
+        const days: JourneyDay[] = Array.isArray(journeyData)
+          ? journeyData
+          : Array.isArray(journeyData?.days)
+          ? journeyData.days
+          : []
+        setData(days)
       } catch (error) {
         console.error("Error loading sentiment journey:", error)
       } finally {
@@ -66,18 +72,23 @@ export default function SentimentJourneyChart() {
     )
   }
 
-  const chartData = data.map((item) => {
-    const date = new Date(item.date)
-    const day = date.getDate().toString().padStart(2, '0')
-    const month = (date.getMonth() + 1).toString().padStart(2, '0')
-    return {
-      date: item.date,
-      dateLabel: `${day}-${month}`,
-      sentiment: item.sentiment,
-      commentCount: item.commentCount,
-      match: item.match,
-    }
-  })
+  const chartData = [...data]
+    .sort(
+      (a, b) =>
+        new Date(a.date).getTime() - new Date(b.date).getTime(),
+    )
+    .map((item) => {
+      const date = new Date(item.date)
+      const day = date.getDate().toString().padStart(2, "0")
+      const month = (date.getMonth() + 1).toString().padStart(2, "0")
+      return {
+        date: item.date,
+        dateLabel: `${day}-${month}`,
+        sentiment: item.sentiment,
+        hasEvent: (item.events?.length ?? 0) > 0,
+        events: item.events ?? [],
+      }
+    })
 
   return (
     <div className="w-full">
@@ -95,14 +106,23 @@ export default function SentimentJourneyChart() {
                 <div className="rounded-lg border bg-background px-3 py-2 shadow-md">
                   <div className="font-semibold mb-2">{data.dateLabel}</div>
                   <div className="space-y-1 text-sm">
-                    <div>Sentiment: {data.sentiment.toFixed(1)}</div>
-                    <div>Comments: {data.commentCount.toLocaleString()}</div>
-                    {data.match && (
+                    <div>Sentiment: {data.sentiment.toFixed(0)}</div>
+                    {data.events && data.events.length > 0 && (
                       <div className="mt-2 pt-2 border-t">
-                        <div className="font-semibold text-xs text-muted-foreground">Match</div>
-                        <div className="text-xs">{data.match.home} vs {data.match.away}</div>
-                        <div className="text-xs font-semibold">Result: {data.match.result}</div>
-                        <div className="text-xs text-muted-foreground">{data.match.competition}</div>
+                        <div className="font-semibold text-xs text-muted-foreground">Events</div>
+                        {data.events.map((evt: JourneyEvent, idx: number) => (
+                          <div key={idx} className="text-xs space-y-0.5">
+                            <div className="font-semibold">{evt.title}</div>
+                            {evt.home && evt.away && (
+                              <div>{evt.home} vs {evt.away}</div>
+                            )}
+                            {evt.result && <div className="font-semibold">Result: {evt.result}</div>}
+                            {evt.competition && (
+                              <div className="text-muted-foreground">{evt.competition}</div>
+                            )}
+                            {evt.time && <div className="text-muted-foreground">{evt.time}</div>}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -118,10 +138,10 @@ export default function SentimentJourneyChart() {
             height={80}
           />
           <YAxis
-            domain={[-1.0, 1.0]}
+            domain={[0, 100]}
             tick={{ fontSize: 12 }}
-            ticks={[-1.0, -0.5, 0.0, 0.5, 1.0]}
-            label={{ value: 'Sentiment', angle: -90, position: 'insideLeft' }}
+            ticks={[0, 25, 50, 75, 100]}
+            label={{ value: "Sentiment", angle: -90, position: "insideLeft" }}
           />
           <Line
             type="monotone"
@@ -130,7 +150,7 @@ export default function SentimentJourneyChart() {
             strokeWidth={3}
             dot={(props: any) => {
               const { payload } = props
-              if (payload.match) {
+              if (payload.hasEvent) {
                 // Paarse marker voor matches
                 return <circle key={`dot-${payload.date}`} cx={props.cx} cy={props.cy} r={10} fill="#9333ea" />
               }
@@ -138,7 +158,7 @@ export default function SentimentJourneyChart() {
             }}
             activeDot={(props: any) => {
               const { payload } = props
-              if (payload.match) {
+              if (payload.hasEvent) {
                 return <circle key={`active-${payload.date}`} cx={props.cx} cy={props.cy} r={12} fill="#9333ea" />
               }
               return <circle key={`active-${payload.date}`} cx={props.cx} cy={props.cy} r={7} fill="#3b82f6" />

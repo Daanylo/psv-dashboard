@@ -14,11 +14,11 @@ export default function RootLayout({
 }>) {
   return (
     <>
-      <Header />
+          <Header />
       <main className="min-h-screen">
-        {children}
-      </main>
-      <Footer />
+            {children}
+          </main>
+          <Footer />
     </>
   );
 }

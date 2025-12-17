@@ -9,7 +9,7 @@ export default function Header() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Image
-              src="/logos/psv.svg"
+              src="/sponsor-logos/psv-logo.svg"
               alt="PSV Logo"
               width={60}
               height={45}

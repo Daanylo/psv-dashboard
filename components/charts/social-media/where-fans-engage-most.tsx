@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Pie, PieChart, Cell } from "recharts"
 import {
   ChartContainer,
@@ -9,14 +9,16 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart"
 
-const data = [
-  { platform: "instagram", label: "Instagram", value: 38 },
-  { platform: "tiktok", label: "TikTok", value: 28 },
-  { platform: "youtube", label: "YouTube", value: 22 },
-  { platform: "facebook", label: "Facebook", value: 12 },
-]
+type PlatformData = {
+  platform: string
+  label: string
+  value: number
+}
 
 export default function WhereFansEngageMost() {
+  const [data, setData] = useState<PlatformData[]>([])
+  const [loading, setLoading] = useState(true)
+
   const config = useMemo<ChartConfig>(
     () => ({
       instagram: { label: "Instagram", color: "#3DC2B2" },
@@ -26,6 +28,37 @@ export default function WhereFansEngageMost() {
     }),
     []
   )
+
+  useEffect(() => {
+    async function load() {
+      const res = await fetch("/api/new/social-media/where-fans-engage-most", {
+        cache: "no-store",
+      })
+      const { items = [] } = (await res.json()) as {
+        items?: { platform: string; mentions: number }[]
+      }
+
+      const total = items.reduce((sum, item) => sum + (item.mentions || 0), 0)
+      const platformData = items.map((item) => ({
+        platform: item.platform.toLowerCase(),
+        label: item.platform,
+        value: total > 0 ? Math.round((item.mentions / total) * 100) : 0,
+      }))
+
+      setData(platformData)
+      setLoading(false)
+    }
+
+    load()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="rounded bg-muted/10 px-4 py-8 text-sm text-muted-foreground min-h-[280px] flex items-center justify-center">
+        Loading engagement data…
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col md:flex-row gap-4 items-start">
@@ -71,7 +104,7 @@ export default function WhereFansEngageMost() {
             <div className="flex items-center gap-2">
               <span
                 className="h-2.5 w-2.5 rounded-[2px]"
-                style={{ backgroundColor: config[item.platform].color }}
+                style={{ backgroundColor: config[item.platform]?.color }}
               />
               <span className="text-sm font-medium">{item.label}</span>
             </div>

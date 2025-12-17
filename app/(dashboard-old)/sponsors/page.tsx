@@ -68,7 +68,7 @@ export default function SponsorsPage() {
   const loadPosts = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/instagram-posts?limit=1000');
+      const response = await fetch('/api/old/instagram-posts?limit=1000');
       if (!response.ok) throw new Error('Failed to fetch posts');
       const data = await response.json();
       setPosts(data.posts);
@@ -84,14 +84,14 @@ export default function SponsorsPage() {
 
   const loadAllDetections = async () => {
     try {
-      const response = await fetch('/api/logo-detections/bulk?limit=10000');
+      const response = await fetch('/api/old/logo-detections/bulk?limit=10000');
       if (!response.ok) return;
       const data = await response.json();
       
       if (data.detections) {
         setAllDetections(data.detections);
         
-        const postsResponse = await fetch('/api/instagram-posts?limit=1000');
+        const postsResponse = await fetch('/api/old/instagram-posts?limit=1000');
         if (postsResponse.ok) {
           const postsData = await postsResponse.json();
           calculateBrandStats(data.detections, postsData.posts);
@@ -166,7 +166,7 @@ export default function SponsorsPage() {
 
   const loadDetections = async (postId: number) => {
     try {
-      const response = await fetch(`/api/logo-detections/${postId}`);
+      const response = await fetch(`/api/old/logo-detections/${postId}`);
       if (response.ok) {
         const data = await response.json();
         if (data.detections && data.detections.length > 0) {
@@ -193,7 +193,7 @@ export default function SponsorsPage() {
 
   const loadExposures = async (postId: number) => {
     try {
-      const response = await fetch(`/api/logo-detections/${postId}`);
+      const response = await fetch(`/api/old/logo-detections/${postId}`);
       if (response.ok) {
         const data = await response.json();
         if (data.detections && data.detections.length > 0) {
@@ -233,7 +233,7 @@ export default function SponsorsPage() {
       const results = await detectLogos(imageRef.current, confidenceThreshold);
       setDetections(results);
 
-      const response = await fetch('/api/logo-detections', {
+      const response = await fetch('/api/old/logo-detections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -267,7 +267,7 @@ export default function SponsorsPage() {
 
   const getImageUrl = (post: InstagramPost, size: 'm' | 'l' = 'm') => {
     const instagramUrl = `https://www.instagram.com/p/${post.shortcode}/media/?size=${size}`;
-    return `/api/proxy-image?url=${encodeURIComponent(instagramUrl)}`;
+    return `/api/old/proxy-image?url=${encodeURIComponent(instagramUrl)}`;
   };
 
   if (loading) {

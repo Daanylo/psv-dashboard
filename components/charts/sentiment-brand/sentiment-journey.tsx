@@ -52,6 +52,7 @@ export default function SentimentJourney() {
 
   useEffect(() => {
     let cancelled = false
+
     async function load() {
       try {
         setLoading(true)
@@ -59,27 +60,24 @@ export default function SentimentJourney() {
           cache: "no-store",
         })
         if (!res.ok) throw new Error(`Request failed: ${res.status}`)
-        const json = (await res.json()) as { days?: JourneyDay[] }
-        const points =
-          json.days?.map((day) => {
-            const date = day.date ?? ""
-            const [year, month, dayNum] = date.split("-")
-            const label = `${parseInt(dayNum, 10)}-${parseInt(
-              month,
-              10,
-            )}` // D-M
-            const pos = day.pos ?? 0
-            return {
-              label,
-              sentiment: pos, // show positive line only
-              pos,
-              neg: day.neg ?? 0,
-              neu: day.neu ?? 0,
-              hasEvent: Boolean(day.events?.length),
-              events: day.events ?? [],
-              isoDate: date,
-            }
-          }) ?? []
+
+        const { days = [] } = (await res.json()) as { days?: JourneyDay[] }
+        const points = days.map((day) => {
+          const [year, month, dayNum] = (day.date || "").split("-")
+          const label = `${parseInt(dayNum, 10)}-${parseInt(month, 10)}`
+
+          return {
+            label,
+            sentiment: day.pos ?? 0,
+            pos: day.pos ?? 0,
+            neg: day.neg ?? 0,
+            neu: day.neu ?? 0,
+            hasEvent: Boolean(day.events?.length),
+            events: day.events ?? [],
+            isoDate: day.date || "",
+          }
+        })
+
         if (!cancelled) setData(points)
       } catch (err: any) {
         if (!cancelled) {
@@ -90,6 +88,7 @@ export default function SentimentJourney() {
         if (!cancelled) setLoading(false)
       }
     }
+
     load()
     return () => {
       cancelled = true

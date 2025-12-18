@@ -111,11 +111,15 @@ export default function TopPerformingHashtags() {
                 )}
               </div>
             </div>
-            <div className="h-5 w-full rounded-md bg-muted overflow-hidden border border-border/60">
+            <div className="h-5 w-full rounded-md bg-muted overflow-hidden border border-border/60 relative">
               <div
-                className="h-full rounded-md"
+                className="h-full rounded-md flex items-center justify-end pr-1.5"
                 style={{ width: `${width}%`, backgroundColor: "#0B8DFF" }}
-              />
+              >
+                <span className="text-[10px] font-medium text-white">
+                  {item.mentions}
+                </span>
+              </div>
             </div>
           </div>
         )

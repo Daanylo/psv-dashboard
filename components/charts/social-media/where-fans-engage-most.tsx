@@ -13,6 +13,7 @@ type PlatformData = {
   platform: string
   label: string
   value: number
+  count: number
 }
 
 export default function WhereFansEngageMost() {
@@ -35,14 +36,14 @@ export default function WhereFansEngageMost() {
         cache: "no-store",
       })
       const { items = [] } = (await res.json()) as {
-        items?: { platform: string; mentions: number }[]
+        items?: { platform: string; count: number; percentage: number; mentions: number }[]
       }
 
-      const total = items.reduce((sum, item) => sum + (item.mentions || 0), 0)
       const platformData = items.map((item) => ({
         platform: item.platform.toLowerCase(),
         label: item.platform,
-        value: total > 0 ? Math.round((item.mentions / total) * 100) : 0,
+        value: item.percentage,
+        count: item.count,
       }))
 
       setData(platformData)
@@ -61,19 +62,28 @@ export default function WhereFansEngageMost() {
   }
 
   return (
-    <div className="flex flex-col md:flex-row gap-4 items-start">
-      <ChartContainer
-        config={config}
-        className="w-full md:w-1/2 aspect-square"
-      >
+    <div className="space-y-4">
+      <div className="flex flex-col md:flex-row gap-4 items-start">
+        <ChartContainer
+          config={config}
+          className="w-full md:w-1/2 aspect-square"
+        >
         <PieChart>
           <ChartTooltip
-            content={
-              <ChartTooltipContent
-                nameKey="label"
-                formatter={(value) => `${value}%`}
-              />
-            }
+            content={({ active, payload }) => {
+              if (!active || !payload || !payload.length) return null
+              const data = payload[0].payload as PlatformData
+              return (
+                <div className="rounded-lg border border-black bg-black px-3 py-2 shadow-md text-white">
+                  <div className="font-semibold text-sm text-white">
+                    {data.label}
+                  </div>
+                  <div className="text-sm mt-1">
+                    <div>{data.count} comments ({data.value}%)</div>
+                  </div>
+                </div>
+              )
+            }}
           />
           <Pie
             data={data}
@@ -108,11 +118,12 @@ export default function WhereFansEngageMost() {
               />
               <span className="text-sm font-medium">{item.label}</span>
             </div>
-            <span className="text-sm text-muted-foreground font-mono">
-              {item.value}%
-            </span>
+            <div className="text-right">
+              <span className="text-sm font-mono block">{item.value}%</span>
+            </div>
           </div>
         ))}
+      </div>
       </div>
     </div>
   )

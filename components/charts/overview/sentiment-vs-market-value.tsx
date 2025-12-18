@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -130,13 +130,79 @@ function SentimentMarketCard({ entry }: { entry: SentimentMarketEntry }) {
 }
 
 export default function SentimentVsMarketValue({
-  items = defaultEntries,
+  items,
   className,
 }: {
   items?: SentimentMarketEntry[]
   className?: string
 }) {
-  const data = items ?? defaultEntries
+  const [data, setData] = useState<SentimentMarketEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        setLoading(true)
+        const res = await fetch("/api/new/overview/sentiment-vs-market-value", {
+          cache: "no-store",
+        })
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`)
+        const json = (await res.json()) as { items?: SentimentMarketEntry[] }
+        
+        if (!cancelled) {
+          const items = json.items ?? []
+          // Sort: undervalued first (top), then overvalued (bottom)
+          const sorted = items.sort((a, b) => {
+            if (a.alignment === "undervalued" && b.alignment === "overvalued") return -1
+            if (a.alignment === "overvalued" && b.alignment === "undervalued") return 1
+            // Within same alignment, sort by sentiment score
+            return b.sentimentScore - a.sentimentScore
+          })
+          setData(sorted)
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to load sentiment vs market value data")
+          setData([])
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    // Use provided items if available, otherwise fetch from API
+    if (items) {
+      const sorted = items.sort((a, b) => {
+        if (a.alignment === "undervalued" && b.alignment === "overvalued") return -1
+        if (a.alignment === "overvalued" && b.alignment === "undervalued") return 1
+        return b.sentimentScore - a.sentimentScore
+      })
+      setData(sorted)
+      setLoading(false)
+    } else {
+      load()
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [items])
+
+  if (loading) {
+    return (
+      <div
+        className={cn(
+          "rounded bg-muted/10 px-4 py-6 text-sm text-muted-foreground min-h-[200px] flex items-center justify-center",
+          className
+        )}
+      >
+        Loading sentiment vs market value data...
+      </div>
+    )
+  }
 
   if (!data || data.length === 0) {
     return (
@@ -146,7 +212,7 @@ export default function SentimentVsMarketValue({
           className
         )}
       >
-        No sentiment vs market value data available.
+        {error || "No sentiment vs market value data available."}
       </div>
     )
   }

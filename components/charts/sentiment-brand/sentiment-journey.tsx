@@ -141,32 +141,8 @@ export default function SentimentJourney() {
                   <div className="font-semibold text-sm text-white">
                     {dateLabel}
                   </div>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-block h-[10px] w-[10px] rounded-[2px]"
-                        style={{ backgroundColor: "#3DC251" }}
-                      />
-                      <span>Positive: {point.pos.toFixed(0)}%</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-block h-[10px] w-[10px] rounded-[2px]"
-                        style={{ backgroundColor: "#FF434A" }}
-                      />
-                      <span>Negative: {point.neg.toFixed(0)}%</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-block h-[10px] w-[10px] rounded-[2px]"
-                        style={{ backgroundColor: "#9CA3AF" }}
-                      />
-                      <span>Neutral: {point.neu.toFixed(0)}%</span>
-                    </div>
-                  </div>
-                  {point.events.length ? (
-                    <div className="border-t border-zinc-700 pt-2 text-xs space-y-2 text-zinc-100">
-                      <div className="font-semibold text-zinc-300">Events</div>
+                  {point.events.length > 0 ? (
+                    <div className="text-xs space-y-2 text-zinc-100">
                       {point.events.map((ev, idx) => (
                         <div
                           key={idx}
@@ -187,6 +163,29 @@ export default function SentimentJourney() {
                       ))}
                     </div>
                   ) : null}
+                  <div className="flex items-center gap-3 text-[10px] text-zinc-300 pt-1">
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="inline-block h-[6px] w-[6px] rounded-[1px]"
+                        style={{ backgroundColor: "#3DC251" }}
+                      />
+                      <span>Pos: {point.pos.toFixed(0)}%</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="inline-block h-[6px] w-[6px] rounded-[1px]"
+                        style={{ backgroundColor: "#FF434A" }}
+                      />
+                      <span>Neg: {point.neg.toFixed(0)}%</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="inline-block h-[6px] w-[6px] rounded-[1px]"
+                        style={{ backgroundColor: "#9CA3AF" }}
+                      />
+                      <span>Neu: {point.neu.toFixed(0)}%</span>
+                    </div>
+                  </div>
                 </div>
               )
             }}
@@ -241,7 +240,7 @@ export default function SentimentJourney() {
       </ChartContainer>
 
       <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-[#545252]">
-        <LegendItem color="#ff941a" label="Days with events" />
+        <LegendItem color="#ff941a" label="Matches" />
         <LegendItem color="#0b8dff" label="No events" />
       </div>
     </div>

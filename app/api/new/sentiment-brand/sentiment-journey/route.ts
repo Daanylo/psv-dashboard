@@ -16,6 +16,17 @@ type EventEntry = {
   club_id?: number
 }
 
+type CommentRecord = {
+  id: number | string
+  comment_text: string
+  created_at: string
+  date: string
+  pos: string | number
+  neg: string | number
+  neu: string | number
+  topic_id: number
+}
+
 type JourneyDay = {
   date: string // YYYY-MM-DD
   pos: number
@@ -37,7 +48,11 @@ function toIsoDate(d: Date) {
 
 function parseDateString(dateStr?: string): string | null {
   if (!dateStr) return null
-  // Try ISO / RFC parse
+  // Try ISO format (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr
+  }
+  // Fallback: Try other formats
   const direct = Date.parse(dateStr)
   if (!Number.isNaN(direct)) {
     return toIsoDate(new Date(direct))
@@ -62,23 +77,57 @@ async function loadEvents(): Promise<EventEntry[]> {
   return JSON.parse(raw) as EventEntry[]
 }
 
-function randomDistribution() {
-  // simple random split that sums to 100
-  const a = Math.random()
-  const b = Math.random()
-  const c = Math.random()
-  const sum = a + b + c
-  const pos = Math.round((a / sum) * 100)
-  const neg = Math.round((b / sum) * 100)
-  let neu = 100 - pos - neg
-  // adjust tiny rounding drift
-  if (neu < 0) neu = 0
-  return { pos, neg, neu }
+async function loadComments(): Promise<CommentRecord[]> {
+  const filePath = path.join(
+    process.cwd(),
+    "public",
+    "data",
+    "json",
+    "post_comments.json",
+  )
+  const raw = await fs.readFile(filePath, "utf-8")
+  return JSON.parse(raw) as CommentRecord[]
 }
+
+function parseSentimentValue(value: string | number | undefined): number {
+  if (typeof value === "number") return value
+  if (typeof value === "string") {
+    const num = parseFloat(value)
+    return Number.isFinite(num) ? num : 0
+  }
+  return 0
+}
+
+function calculateAverageSentiment(comments: CommentRecord[]): { pos: number; neg: number; neu: number } {
+  if (!comments.length) {
+    return { pos: 33, neg: 33, neu: 34 } // Default even distribution when no comments
+  }
+
+  let totalPos = 0
+  let totalNeg = 0
+  let totalNeu = 0
+
+  for (const comment of comments) {
+    totalPos += parseSentimentValue(comment.pos)
+    totalNeg += parseSentimentValue(comment.neg)
+    totalNeu += parseSentimentValue(comment.neu)
+  }
+
+  const count = comments.length
+  return {
+    pos: Math.round((totalPos / count) * 100) / 100,
+    neg: Math.round((totalNeg / count) * 100) / 100,
+    neu: Math.round((totalNeu / count) * 100) / 100,
+  }
+}
+
 
 export async function GET() {
   try {
-    const events = await loadEvents()
+    const [events, comments] = await Promise.all([
+      loadEvents(),
+      loadComments()
+    ])
 
     const today = new Date()
     const end = new Date(today)
@@ -94,7 +143,14 @@ export async function GET() {
         const parsed = parseDateString(evt.date_display)
         return parsed === iso
       })
-      const { pos, neg, neu } = randomDistribution()
+
+      // Filter comments for this day
+      const dayComments = comments.filter((comment) => {
+        const commentDate = comment.date.split('T')[0] // Extract YYYY-MM-DD from ISO string
+        return commentDate === iso
+      })
+
+      const { pos, neg, neu } = calculateAverageSentiment(dayComments)
 
       days.push({
         date: iso,

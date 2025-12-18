@@ -23,32 +23,38 @@ function ToneBar({ player }: { player: PlayerTone }) {
       <p className="text-sm text-[#212529]">{player.name}</p>
       <div className="flex h-8 overflow-hidden rounded-[10px]">
         <div
-          className="h-full"
+          className="h-full flex items-center justify-center text-white text-[11px] font-bold"
           style={{
             width: `${player.positive}%`,
             backgroundColor: toneColors.positive,
             minWidth: player.positive > 0 ? "4%" : "0",
           }}
           aria-label={`Positive ${player.positive}%`}
-        />
+        >
+          {player.positive > 5 ? `${player.positive}%` : ""}
+        </div>
         <div
-          className="h-full"
+          className="h-full flex items-center justify-center text-gray-700 text-[11px] font-bold"
           style={{
             width: `${player.neutral}%`,
             backgroundColor: toneColors.neutral,
             minWidth: player.neutral > 0 ? "4%" : "0",
           }}
           aria-label={`Neutral ${player.neutral}%`}
-        />
+        >
+          {player.neutral > 5 ? `${player.neutral}%` : ""}
+        </div>
         <div
-          className="h-full"
+          className="h-full flex items-center justify-center text-white text-[11px] font-bold"
           style={{
             width: `${player.negative}%`,
             backgroundColor: toneColors.negative,
             minWidth: player.negative > 0 ? "4%" : "0",
           }}
           aria-label={`Negative ${player.negative}%`}
-        />
+        >
+          {player.negative > 5 ? `${player.negative}%` : ""}
+        </div>
       </div>
     </div>
   )

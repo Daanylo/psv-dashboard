@@ -240537,7 +240537,7 @@
     "id": 1,
     "category_id": 7,
     "created_at": "2025-11-18T13:26:11+00:00",
-    "insight": "Noodgang over",
+    "insight": "PSV vs Heracles",
     "content": "Het is tijd om overmars terug te halen met een noodgang, en er voor zorgen dat Ajax, weer Ajax word, en dat een trainer serieus kan bouwen naar waar ajax voor staat, kroes out!!"
   },
   {
@@ -668666,5 +668666,33 @@
     "created_at": "2025-11-18T15:59:59+00:00",
     "insight": "Traore performance",
     "content": "Traore is such a good player.. A win for Sunderland,"
+  },
+  {
+    "id": 54703,
+    "category_id": 8,
+    "created_at": "2025-12-16T21:00:00+00:00",
+    "insight": "PSV vs GVVV",
+    "content": "PSV wint KNVB beker wedstrijd met 3-0 tegen GVVV"
+  },
+  {
+    "id": 54704,
+    "category_id": 8,
+    "created_at": "2025-12-13T20:00:00+00:00",
+    "insight": "PSV vs Heracles",
+    "content": "PSV wint spannende thuiswedstrijd tegen Heracles met 4-3"
+  },
+  {
+    "id": 54705,
+    "category_id": 8,
+    "created_at": "2025-12-09T21:00:00+00:00",
+    "insight": "PSV vs Atlético Madrid",
+    "content": "PSV verliest Champions League wedstrijd tegen Atlético Madrid met 2-3"
+  },
+  {
+    "id": 54706,
+    "category_id": 8,
+    "created_at": "2025-12-06T16:30:00+00:00",
+    "insight": "SC Heerenveen vs PSV",
+    "content": "PSV wint uitwedstrijd bij SC Heerenveen met 0-2"
   }
 ]

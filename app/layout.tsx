@@ -19,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="nl">
-      <body className={`${openSans.variable} antialiased`}>
+      <body className={`${openSans.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>

@@ -95,6 +95,9 @@ export default function PlatformDistributionChart() {
               innerRadius={85}
               fill="#8884d8"
               dataKey="value"
+              paddingAngle={0}
+              stroke="transparent"
+              strokeWidth={0}
             >
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />

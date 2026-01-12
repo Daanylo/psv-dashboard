@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
+import Sidebar from "@/components/sidebar";
 
 export const metadata: Metadata = {
   title: "PSV Dashboard - Logo Detection",
@@ -13,12 +14,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <>
-          <Header />
-      <main className="min-h-screen">
-            {children}
-          </main>
-          <Footer />
-    </>
+    <div className="min-h-screen flex">
+      <Sidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header />
+        <main className="flex-1">
+          {children}
+        </main>
+        <Footer />
+      </div>
+    </div>
   );
 }

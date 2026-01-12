@@ -1,18 +1,23 @@
 "use client"
 
 import Image from "next/image"
-import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
-  ArrowRight,
   ArrowUpDown,
+  ArrowRight,
   BadgeEuro,
-  Calendar as CalendarIcon,
+  Bookmark,
+  CalendarIcon,
   Download,
   Filter,
   Flag,
+  Heart,
   LineChart as LineChartIcon,
+  MessageCircle,
   MessageSquareText,
+  PieChart as PieChartIcon,
+  Repeat2,
+  Share2,
   Smile,
   Star,
   ThumbsDown,
@@ -20,6 +25,20 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { Separator } from "@/components/ui/separator"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+} from "recharts"
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import {
   Select,
   SelectContent,
@@ -27,17 +46,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { cn } from "@/lib/utils"
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts"
-import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 
 type DateRangeKey = "7" | "30" | "90" | "365"
 type JourneyGranularity = "daily" | "weekly"
@@ -65,15 +73,6 @@ type SentimentJourneyEvent = {
   subtitle: string
 }
 
-
-type PlayerMentionsStats = {
-  mentions: number
-  mentionsChangePct: number
-  positivePct: number
-  neutralPct: number
-  negativePct: number
-}
-
 const sentimentJourneyChartConfig: ChartConfig = {
   positiveCount: {
     label: "Positive",
@@ -95,6 +94,13 @@ function toIsoDateOnly(date: Date) {
   const d = new Date(date)
   d.setHours(0, 0, 0, 0)
   return d.toISOString().slice(0, 10)
+}
+
+function legendLabel(name: string) {
+  const trimmed = name.trim()
+  if (!trimmed) return name
+  const parts = trimmed.split(/\s+/)
+  return parts[parts.length - 1] ?? name
 }
 
 function addDaysLocal(date: Date, days: number) {
@@ -122,8 +128,8 @@ function labelForDate(date: Date) {
 
 function startOfWeekLocal(date: Date) {
   const d = new Date(date)
-  const day = d.getDay() // 0=Sun
-  const diff = day === 0 ? -6 : 1 - day // Mon start
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
   d.setDate(d.getDate() + diff)
   d.setHours(0, 0, 0, 0)
   return d
@@ -139,20 +145,13 @@ function percentChange(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
-function makeMockJourney(
-  start: Date,
-  end: Date,
-  granularity: JourneyGranularity,
-  seedBase: number
-) {
+function makeMockJourney(start: Date, end: Date, granularity: JourneyGranularity, seedBase: number) {
   const points: SentimentJourneyPoint[] = []
 
   const startDay = new Date(start)
   startDay.setHours(0, 0, 0, 0)
   const endDay = new Date(end)
   endDay.setHours(0, 0, 0, 0)
-
-  const random = mulberry32(seedBase)
 
   let cursor = new Date(startDay)
   let index = 0
@@ -209,26 +208,6 @@ function makeMockJourney(
   return { points, positiveCount, negativeCount }
 }
 
-function makeMockPlayerMentionsStats(seedBase: number): PlayerMentionsStats {
-  const r = mulberry32(seedBase)
-
-  const mentions = 620 + Math.floor(r() * 1680)
-  const prevMentions = 620 + Math.floor(mulberry32(seedBase + 999)() * 1680)
-
-  const positivePct = clamp(0.25 + r() * 0.35, 0.05, 0.85)
-  const neutralPct = clamp(0.12 + r() * 0.26, 0.05, 0.7)
-  const negativePct = clamp(1 - positivePct - neutralPct, 0.05, 0.85)
-  const totalPct = positivePct + neutralPct + negativePct
-
-  return {
-    mentions,
-    mentionsChangePct: percentChange(mentions, prevMentions),
-    positivePct: (positivePct / totalPct) * 100,
-    neutralPct: (neutralPct / totalPct) * 100,
-    negativePct: (negativePct / totalPct) * 100,
-  }
-}
-
 function makeMockJourneyEvents(points: SentimentJourneyPoint[], seedBase: number) {
   if (!points.length) return [] as SentimentJourneyEvent[]
 
@@ -282,10 +261,7 @@ function SentimentJourneyEventOverlay({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
-      <div
-        className="absolute top-0"
-        style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}
-      >
+      <div className="absolute top-0" style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}>
         {events.map((event) => {
           const idx = points.findIndex((p) => p.label === event.xLabel)
           if (idx < 0) return null
@@ -293,15 +269,8 @@ function SentimentJourneyEventOverlay({
           const leftPct = ((idx + 0.5) / count) * 100
 
           return (
-            <div
-              key={event.id}
-              className="absolute"
-              style={{ left: `${leftPct}%`, top: -10 }}
-            >
-              <div
-                className="group pointer-events-auto relative z-10 hover:z-50"
-                style={{ transform: "translateX(-14px)" }}
-              >
+            <div key={event.id} className="absolute" style={{ left: `${leftPct}%`, top: -10 }}>
+              <div className="group pointer-events-auto relative z-10 hover:z-50" style={{ transform: "translateX(-14px)" }}>
                 <div
                   className={
                     "flex h-7 items-center overflow-hidden rounded-md border border-border bg-background " +
@@ -331,35 +300,81 @@ function SentimentJourneyEventOverlay({
   )
 }
 
-function formatShortDate(date: Date) {
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
+type MentionsShareSlice = {
+  key: string
+  name: string
+  value: number
+  color: string
 }
 
-function getDateRange(days: number, endDate: Date) {
-  const end = new Date(endDate)
-  end.setHours(0, 0, 0, 0)
+const engagementMarqueeRowA = [
+  { key: "like", label: "Likes", Icon: Heart },
+  { key: "comment", label: "Comments", Icon: MessageCircle },
+  { key: "share", label: "Shares", Icon: Share2 },
+  { key: "bookmark", label: "Bookmarks", Icon: Bookmark },
+  { key: "repost", label: "Reposts", Icon: Repeat2 },
+] as const
 
-  const start = new Date(end)
-  start.setDate(start.getDate() - (days - 1))
+const engagementMarqueeRowB = [
+  { key: "comment", label: "Comments", Icon: MessageCircle },
+  { key: "bookmark", label: "Bookmarks", Icon: Bookmark },
+  { key: "like", label: "Likes", Icon: Heart },
+  { key: "share", label: "Shares", Icon: Share2 },
+  { key: "thumb", label: "Upvotes", Icon: ThumbsUp },
+] as const
 
-  return { start, end }
-}
+const engagementMarqueeRowC = [
+  { key: "thumb", label: "Upvotes", Icon: ThumbsUp },
+  { key: "like", label: "Likes", Icon: Heart },
+  { key: "repost", label: "Reposts", Icon: Repeat2 },
+  { key: "comment", label: "Comments", Icon: MessageCircle },
+  { key: "bookmark", label: "Bookmarks", Icon: Bookmark },
+  { key: "share", label: "Shares", Icon: Share2 },
+] as const
 
-function getRatingBadgeClass(rating: number) {
-  if (rating < 6) return "bg-red-500"
-  if (rating < 8) return "bg-orange-400"
-  return "bg-green-500"
-}
-
-export default function HomePage() {
+export default function EngagementHubPage() {
   const [search, setSearch] = useState("")
-  const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
+
+  const sentimentVsMarketValueRef = useRef<HTMLDivElement | null>(null)
+  const mentionsShareRef = useRef<HTMLDivElement | null>(null)
+  const [playerReportHeightPx, setPlayerReportHeightPx] = useState<number | null>(null)
+  const [hotTopicsHeightPx, setHotTopicsHeightPx] = useState<number | null>(null)
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)")
+
+    const update = () => {
+      if (!mql.matches) {
+        setPlayerReportHeightPx(null)
+        setHotTopicsHeightPx(null)
+        return
+      }
+
+      const sentimentHeight = sentimentVsMarketValueRef.current?.getBoundingClientRect().height
+      const mentionsHeight = mentionsShareRef.current?.getBoundingClientRect().height
+
+      setPlayerReportHeightPx(sentimentHeight ? Math.round(sentimentHeight) : null)
+      setHotTopicsHeightPx(mentionsHeight ? Math.round(mentionsHeight) : null)
+    }
+
+    const ro = new ResizeObserver(update)
+    if (sentimentVsMarketValueRef.current) ro.observe(sentimentVsMarketValueRef.current)
+    if (mentionsShareRef.current) ro.observe(mentionsShareRef.current)
+    update()
+
+    const onChange = () => update()
+    mql.addEventListener("change", onChange)
+    window.addEventListener("resize", update)
+
+    return () => {
+      ro.disconnect()
+      mql.removeEventListener("change", onChange)
+      window.removeEventListener("resize", update)
+    }
+  }, [])
 
   const dateRangeDays = useMemo(() => {
     switch (dateRangeKey) {
@@ -374,11 +389,13 @@ export default function HomePage() {
     }
   }, [dateRangeKey])
 
-  const { start, end } = useMemo(() => getDateRange(dateRangeDays, new Date()), [dateRangeDays])
-  const dateRangeLabel = useMemo(
-    () => `${formatShortDate(start)} - ${formatShortDate(end)}`,
-    [start, end]
-  )
+  const { start, end } = useMemo(() => {
+    const endDate = new Date()
+    endDate.setHours(0, 0, 0, 0)
+    const startDate = new Date(endDate)
+    startDate.setDate(startDate.getDate() - (dateRangeDays - 1))
+    return { start: startDate, end: endDate }
+  }, [dateRangeDays])
 
   const periodLabel = useMemo(() => {
     switch (dateRangeKey) {
@@ -393,27 +410,8 @@ export default function HomePage() {
     }
   }, [dateRangeKey])
 
-  const recentEventDateLabel = useMemo(() => formatShortDate(end), [end])
-  const bestRating = 8.6
-  const worstRating = 5.8
-
-  const psvMarqueeRowA = useMemo(() => Array.from({ length: 10 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
-  const psvMarqueeRowB = useMemo(() => Array.from({ length: 9 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
-  const psvMarqueeRowC = useMemo(() => Array.from({ length: 8 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
-
-  const playerMentions = useMemo(() => {
-    const seedBase =
-      start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 4242
-
-    return {
-      mostPopular: makeMockPlayerMentionsStats(seedBase + 20),
-      mostControversial: makeMockPlayerMentionsStats(seedBase + 4),
-    }
-  }, [start])
-
   const sentimentJourneyData = useMemo(() => {
-    const days =
-      Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
+    const days = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
     const prevEnd = addDaysLocal(start, -1)
     const prevStart = addDaysLocal(prevEnd, -(days - 1))
 
@@ -437,8 +435,7 @@ export default function HomePage() {
   }, [start, end, journeyGranularity])
 
   const sentimentJourneyEvents = useMemo(() => {
-    const seedBase =
-      start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 909
+    const seedBase = start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 909
     return makeMockJourneyEvents(sentimentJourneyData.points, seedBase)
   }, [sentimentJourneyData.points, start])
 
@@ -453,8 +450,51 @@ export default function HomePage() {
     return rounded
   }, [sentimentJourneyData.points])
 
+  const mentionsShare = useMemo(() => {
+    const data: MentionsShareSlice[] = [
+      { key: "p1", name: "Guus Til", value: 28, color: "var(--chart-1)" },
+      { key: "p2", name: "Armando Obispo", value: 18, color: "var(--chart-2)" },
+      { key: "p3", name: "Johan Bakayoko", value: 22, color: "var(--chart-3)" },
+      { key: "p4", name: "Joey Veerman", value: 16, color: "var(--chart-4)" },
+      { key: "p5", name: "Luuk de Jong", value: 16, color: "var(--chart-5)" },
+    ]
+
+    const config: ChartConfig = Object.fromEntries(
+      data.map((item) => [
+        item.key,
+        {
+          label: item.name,
+          color: item.color,
+        },
+      ])
+    )
+
+    return { data, config }
+  }, [])
+
+  const platformShare = useMemo(() => {
+    const data: MentionsShareSlice[] = [
+      { key: "ig", name: "Instagram", value: 44, color: "var(--chart-1)" },
+      { key: "tt", name: "TikTok", value: 26, color: "var(--chart-2)" },
+      { key: "yt", name: "YouTube", value: 18, color: "var(--chart-3)" },
+      { key: "fb", name: "Facebook", value: 12, color: "var(--chart-4)" },
+    ]
+
+    const config: ChartConfig = Object.fromEntries(
+      data.map((item) => [
+        item.key,
+        {
+          label: item.name,
+          color: item.color,
+        },
+      ])
+    )
+
+    return { data, config }
+  }, [])
+
   return (
-    <main className="max-w-screen-xl mx-auto px-6 py-8">
+    <main className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
           <input
@@ -466,24 +506,22 @@ export default function HomePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex items-stretch">
-              <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
-                <CalendarIcon className="h-4 w-4" />
-                {dateRangeLabel}
-              </div>
-              <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
-                <SelectTrigger className="h-9 rounded-l-none border-l-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7">Last 7 days</SelectItem>
-                  <SelectItem value="30">Last 30 days</SelectItem>
-                  <SelectItem value="90">Last 90 days</SelectItem>
-                  <SelectItem value="365">Last 365 days</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="inline-flex items-stretch">
+            <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+              <CalendarIcon className="h-4 w-4" />
+              {periodLabel}
             </div>
+            <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
+              <SelectTrigger className="h-9 rounded-l-none border-l-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Last 7 days</SelectItem>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="365">Last 365 days</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="relative">
@@ -520,75 +558,70 @@ export default function HomePage() {
 
       <section
         className={
-          "relative mt-6 h-[150px] overflow-hidden" +
+          "relative h-[150px] overflow-hidden" +
           " [clip-path:polygon(0_0,100%_0,calc(100%_-_12px)_100%,0_100%)]" +
           " before:absolute before:inset-0 before:z-0 before:bg-black"
         }
       >
         <div className="relative z-10 flex h-full flex-wrap items-stretch justify-between gap-6 px-6 text-white md:flex-nowrap">
           <div className="flex flex-1 flex-col justify-center">
-            <div className="text-3xl font-bold font-psv-branding italic leading-none md:text-3xl">OVERVIEW</div>
-            <div className="mt-2 max-w-[520px] text-sm text-white/80">
-              Snapshot of sentiment, mentions, and performance signals.
-            </div>
+            <div className="text-3xl font-bold font-psv-branding italic leading-none md:text-3xl">ENGAGEMENT HUB</div>
+            <div className="mt-2 max-w-[520px] text-sm text-white/80">Player sentiment, mentions and engagement signals.</div>
           </div>
-
-          <div className="relative flex w-full flex-none items-center overflow-hidden md:w-[400px] md:-mr-6">
-            <div className="relative z-0 flex w-full flex-col gap-3 py-4">
+          <div className="relative hidden h-full w-full flex-none items-center overflow-hidden md:flex md:w-[400px] md:-mr-6">
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-black to-transparent" />
+            <div className="relative z-0 flex w-full flex-col gap-2 py-3">
               <div className="w-full overflow-hidden">
-                <div className="psv-logo-marquee psv-logo-marquee--a flex w-max items-center gap-10 will-change-transform">
-                  {[...psvMarqueeRowA, ...psvMarqueeRowA].map((logo, index) => (
-                    <Image
-                      key={`psv-a-${index}`}
-                      src={logo.src}
-                      alt={logo.alt}
-                      width={80}
-                      height={80}
-                      className="h-8 w-auto opacity-80 grayscale brightness-200"
-                    />
+                <div
+                  className="psv-logo-marquee psv-logo-marquee--a flex w-max items-center gap-6 will-change-transform"
+                  style={{ animationDuration: "12s" }}
+                >
+                  {[...engagementMarqueeRowA, ...engagementMarqueeRowA].map((item, index) => (
+                    <div
+                      key={`eng-a-${item.key}-${index}`}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5"
+                    >
+                      <item.Icon className="h-4 w-4 text-white/80" />
+                      <span className="sr-only">{item.label}</span>
+                    </div>
                   ))}
                 </div>
               </div>
 
               <div className="w-full overflow-hidden">
-                <div className="psv-logo-marquee psv-logo-marquee--b flex w-max items-center gap-10 will-change-transform">
-                  {[...psvMarqueeRowB, ...psvMarqueeRowB].map((logo, index) => (
-                    <Image
-                      key={`psv-b-${index}`}
-                      src={logo.src}
-                      alt={logo.alt}
-                      width={80}
-                      height={80}
-                      className="h-8 w-auto opacity-70 grayscale brightness-200"
-                    />
+                <div
+                  className="psv-logo-marquee psv-logo-marquee--b flex w-max items-center gap-6 will-change-transform"
+                  style={{ animationDuration: "16s" }}
+                >
+                  {[...engagementMarqueeRowB, ...engagementMarqueeRowB].map((item, index) => (
+                    <div
+                      key={`eng-b-${item.key}-${index}`}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5"
+                    >
+                      <item.Icon className="h-4 w-4 text-white/70" />
+                      <span className="sr-only">{item.label}</span>
+                    </div>
                   ))}
                 </div>
               </div>
 
-              <div className="hidden w-full overflow-hidden md:block">
-                <div className="psv-logo-marquee psv-logo-marquee--c flex w-max items-center gap-10 will-change-transform">
-                  {[...psvMarqueeRowC, ...psvMarqueeRowC].map((logo, index) => (
-                    <Image
-                      key={`psv-c-${index}`}
-                      src={logo.src}
-                      alt={logo.alt}
-                      width={80}
-                      height={80}
-                      className="h-8 w-auto opacity-60 grayscale brightness-200"
-                    />
+              <div className="w-full overflow-hidden">
+                <div
+                  className="psv-logo-marquee psv-logo-marquee--c flex w-max items-center gap-6 will-change-transform"
+                  style={{ animationDuration: "20s" }}
+                >
+                  {[...engagementMarqueeRowC, ...engagementMarqueeRowC].map((item, index) => (
+                    <div
+                      key={`eng-c-${item.key}-${index}`}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5"
+                    >
+                      <item.Icon className="h-4 w-4 text-white/60" />
+                      <span className="sr-only">{item.label}</span>
+                    </div>
                   ))}
                 </div>
               </div>
             </div>
-
-            <div
-              className="pointer-events-none absolute inset-0 z-10"
-              style={{
-                background:
-                  "linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 20%, rgba(0,0,0,0.92) 24%, rgba(0,0,0,0) 66%)",
-              }}
-              aria-hidden
-            />
           </div>
         </div>
       </section>
@@ -607,9 +640,7 @@ export default function HomePage() {
                 onClick={() => setJourneyGranularity("daily")}
                 className={cn(
                   "inline-flex h-7 items-center rounded-sm px-3",
-                  journeyGranularity === "daily"
-                    ? "bg-black text-white"
-                    : "text-muted-foreground hover:bg-accent"
+                  journeyGranularity === "daily" ? "bg-black text-white" : "text-muted-foreground hover:bg-accent"
                 )}
               >
                 Daily
@@ -619,9 +650,7 @@ export default function HomePage() {
                 onClick={() => setJourneyGranularity("weekly")}
                 className={cn(
                   "inline-flex h-7 items-center rounded-sm px-3",
-                  journeyGranularity === "weekly"
-                    ? "bg-black text-white"
-                    : "text-muted-foreground hover:bg-accent"
+                  journeyGranularity === "weekly" ? "bg-black text-white" : "text-muted-foreground hover:bg-accent"
                 )}
               >
                 Weekly
@@ -667,8 +696,7 @@ export default function HomePage() {
                     if (!point) return null
 
                     const total = point.positiveCount + point.negativeCount
-                    const netPct =
-                      total === 0 ? 0 : ((point.positiveCount - point.negativeCount) / total) * 100
+                    const netPct = total === 0 ? 0 : ((point.positiveCount - point.negativeCount) / total) * 100
                     return (
                       <div className="rounded-lg bg-black px-3 py-2 text-white shadow-md">
                         <div className="text-sm font-semibold">{point.label}</div>
@@ -677,17 +705,13 @@ export default function HomePage() {
                             <span className="inline-flex items-center gap-2 text-green-500">
                               <ThumbsUp className="h-4 w-4" />
                             </span>
-                            <span className="font-medium tabular-nums">
-                              {point.positiveCount.toLocaleString()}
-                            </span>
+                            <span className="font-medium tabular-nums">{point.positiveCount.toLocaleString()}</span>
                           </div>
                           <div className="flex items-center justify-between gap-6">
                             <span className="inline-flex items-center gap-2 text-red-500">
                               <ThumbsDown className="h-4 w-4" />
                             </span>
-                            <span className="font-medium tabular-nums">
-                              {point.negativeCount.toLocaleString()}
-                            </span>
+                            <span className="font-medium tabular-nums">{point.negativeCount.toLocaleString()}</span>
                           </div>
                           <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/70">
                             <LineChartIcon className="h-3.5 w-3.5" />
@@ -729,9 +753,7 @@ export default function HomePage() {
                   <div
                     className={cn(
                       "inline-flex items-center gap-1 text-sm font-semibold",
-                      sentimentJourneyData.summary.positiveChangePct >= 0
-                        ? "text-green-500"
-                        : "text-red-500"
+                      sentimentJourneyData.summary.positiveChangePct >= 0 ? "text-green-500" : "text-red-500"
                     )}
                   >
                     <span>{formatDeltaPct(sentimentJourneyData.summary.positiveChangePct)}</span>
@@ -758,9 +780,7 @@ export default function HomePage() {
                   <div
                     className={cn(
                       "inline-flex items-center gap-1 text-sm font-semibold",
-                      sentimentJourneyData.summary.negativeChangePct >= 0
-                        ? "text-red-500"
-                        : "text-green-500"
+                      sentimentJourneyData.summary.negativeChangePct >= 0 ? "text-red-500" : "text-green-500"
                     )}
                   >
                     <span>{formatDeltaPct(sentimentJourneyData.summary.negativeChangePct)}</span>
@@ -777,205 +797,11 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="mt-6 grid w-full grid-cols-1 gap-6 md:grid-cols-3">
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background px-6 pt-6 pb-0">
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="text-base font-semibold font-psv-branding">MOST POPULAR</div>
-            <div className="text-sm text-muted-foreground">{periodLabel}</div>
-          </div>
-
-          <div className="mt-5 flex items-end gap-4">
-            <div className="shrink-0 self-end">
-              <Image
-                src="/player_images/20.png"
-                alt="Most popular player"
-                width={256}
-                height={256}
-                className="h-36 w-auto object-contain object-bottom"
-              />
-            </div>
-
-            <div className="min-w-0 self-start w-full">
-              <div
-                className={
-                  "relative inline-flex overflow-hidden px-3 py-1 text-white" +
-                  " before:absolute before:inset-0 before:bg-black" +
-                  " before:[clip-path:polygon(0_0,100%_0,calc(100%_-_10px)_100%,0_100%)]"
-                }
-              >
-                <div className="relative z-10">
-                  <div className="text-xs leading-none text-white/80">Guus</div>
-                  <div className="font-psv-branding italic text-3xl leading-none">Til</div>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-baseline gap-2">
-                <div className="font-psv-branding italic text-3xl leading-none">
-                  {playerMentions.mostPopular.mentions.toLocaleString()}
-                </div>
-                <div
-                  className={cn(
-                    "inline-flex items-center gap-1 text-sm font-semibold",
-                    playerMentions.mostPopular.mentionsChangePct >= 0
-                      ? "text-green-500"
-                      : "text-red-500"
-                  )}
-                >
-                  <span>{formatDeltaPct(playerMentions.mostPopular.mentionsChangePct)}</span>
-                  {playerMentions.mostPopular.mentionsChangePct >= 0 ? (
-                    <TrendingUp className="h-4 w-4" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4" />
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-2 h-3 w-[min(220px,100%)] overflow-hidden rounded-full bg-muted">
-                <div className="flex h-full w-full">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: `${playerMentions.mostPopular.positivePct}%` }}
-                  />
-                  <div
-                    className="h-full bg-muted-foreground/40"
-                    style={{ width: `${playerMentions.mostPopular.neutralPct}%` }}
-                  />
-                  <div
-                    className="h-full bg-red-500"
-                    style={{ width: `${playerMentions.mostPopular.negativePct}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background px-6 pt-6 pb-0">
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="text-base font-semibold font-psv-branding">MOST CONTROVERSIAL</div>
-            <div className="text-sm text-muted-foreground">{periodLabel}</div>
-          </div>
-
-          <div className="mt-5 flex items-end gap-4">
-            <div className="shrink-0 self-end">
-              <Image
-                src="/player_images/4.png"
-                alt="Most controversial player"
-                width={256}
-                height={256}
-                className="h-36 w-auto object-contain object-bottom"
-              />
-            </div>
-
-            <div className="min-w-0 self-start w-full">
-              <div
-                className={
-                  "relative inline-flex overflow-hidden px-3 py-1 text-white" +
-                  " before:absolute before:inset-0 before:bg-black" +
-                  " before:[clip-path:polygon(0_0,100%_0,calc(100%_-_10px)_100%,0_100%)]"
-                }
-              >
-                <div className="relative z-10">
-                  <div className="text-xs leading-none text-white/80">Armando</div>
-                  <div className="font-psv-branding italic text-3xl leading-none">Obispo</div>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-baseline gap-2">
-                <div className="font-psv-branding italic text-3xl leading-none">
-                  {playerMentions.mostControversial.mentions.toLocaleString()}
-                </div>
-                <div
-                  className={cn(
-                    "inline-flex items-center gap-1 text-sm font-semibold",
-                    playerMentions.mostControversial.mentionsChangePct >= 0
-                      ? "text-green-500"
-                      : "text-red-500"
-                  )}
-                >
-                  <span>{formatDeltaPct(playerMentions.mostControversial.mentionsChangePct)}</span>
-                  {playerMentions.mostControversial.mentionsChangePct >= 0 ? (
-                    <TrendingUp className="h-4 w-4" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4" />
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-2 h-3 w-[min(220px,100%)] overflow-hidden rounded-full bg-muted">
-                <div className="flex h-full w-full">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: `${playerMentions.mostControversial.positivePct}%` }}
-                  />
-                  <div
-                    className="h-full bg-muted-foreground/40"
-                    style={{ width: `${playerMentions.mostControversial.neutralPct}%` }}
-                  />
-                  <div
-                    className="h-full bg-red-500"
-                    style={{ width: `${playerMentions.mostControversial.negativePct}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="flex h-[215px] flex-col overflow-hidden rounded-xl border border-border bg-background">
-          <div className="px-6 pt-6 pb-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">HOT TOPICS</div>
-              <div className="text-sm text-muted-foreground">{periodLabel}</div>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto border-t border-border">
-            <table className="w-full table-fixed text-xs">
-              <thead>
-                <tr>
-                  <th className="sticky top-0 z-10 w-12 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">
-                    #
-                  </th>
-                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">
-                    TOPIC
-                  </th>
-                  <th className="sticky top-0 z-10 w-24 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">
-                    MENTIONS
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(
-                  [
-                    { rank: 1, topic: "Referee decision in the second half", mentions: 1240 },
-                    { rank: 2, topic: "Tactical change after halftime", mentions: 980 },
-                    { rank: 3, topic: "Performance of the midfield trio", mentions: 860 },
-                    { rank: 4, topic: "Injury update and squad depth", mentions: 740 },
-                    { rank: 5, topic: "VAR check and offside call", mentions: 690 },
-                    { rank: 6, topic: "Substitution impact late in the game", mentions: 640 },
-                    { rank: 7, topic: "Goalkeeper distribution and build-up play", mentions: 610 },
-                    { rank: 8, topic: "Set-piece defending and marking", mentions: 580 },
-                    { rank: 9, topic: "Atmosphere in the stadium", mentions: 540 },
-                    { rank: 10, topic: "Post-match interview highlights", mentions: 510 },
-                  ] as const
-                ).map((row, index) => (
-                  <tr key={row.rank} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
-                    <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
-                    <td className="px-3 py-2">
-                      <div className="truncate">{row.topic}</div>
-                    </td>
-                    <td className="w-24 px-3 py-2 text-right font-medium tabular-nums">
-                      {row.mentions.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-6 grid w-full grid-cols-1 gap-6 md:flex md:h-[300px]">
-        <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background md:flex-1 md:min-w-0">
+      <section className="mt-6 flex w-full flex-col gap-6 md:flex-row md:items-start">
+        <div
+          className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:flex-1 md:min-w-0"
+          style={playerReportHeightPx ? { height: playerReportHeightPx } : undefined}
+        >
           <div className="flex items-center justify-between gap-3 px-6 py-4">
             <div className="text-base font-semibold font-psv-branding">PLAYER REPORT</div>
             <div className="flex items-center gap-2">
@@ -997,7 +823,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto border-t border-border">
+          <div className="flex-1 min-h-0 overflow-y-auto border-t border-border">
             <table className="w-full table-fixed text-xs">
               <colgroup>
                 <col className="w-10" />
@@ -1009,12 +835,8 @@ export default function HomePage() {
               </colgroup>
               <thead>
                 <tr>
-                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">
-                    #
-                  </th>
-                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">
-                    PLAYER
-                  </th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">#</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">PLAYER</th>
                   <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">
                     <span className="inline-flex items-center justify-end gap-1">
                       <MessageSquareText className="h-3.5 w-3.5" />
@@ -1136,10 +958,7 @@ export default function HomePage() {
                     },
                   ] as const
                 ).map((row, index) => (
-                  <tr
-                    key={row.rank}
-                    className={cn(index % 2 === 0 ? "bg-background" : "bg-muted", "h-8")}
-                  >
+                  <tr key={row.rank} className={cn(index % 2 === 0 ? "bg-background" : "bg-muted", "h-8")}>
                     <td className="px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="h-full px-3">
                       <div className="flex h-full items-center gap-2">
@@ -1157,14 +976,10 @@ export default function HomePage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">
-                      {row.mentions.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{row.avgSentiment}%</td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">
-                      {row.avgPerformance.toFixed(1)}
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{row.marketValue}</td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums">{row.mentions.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.avgSentiment}%</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.avgPerformance.toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.marketValue}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1172,47 +987,316 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background md:w-[400px] md:min-w-[400px] md:flex-none">
-          <div className="flex items-center justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">TOP EXPOSURES</div>
+        <div
+          ref={sentimentVsMarketValueRef}
+          className="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-background md:w-[400px] md:min-w-[380px] md:flex-none"
+        >
+          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
+            <div className="text-base font-semibold font-psv-branding">SENTIMENT VS MARKET VALUE</div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
 
-          <div className="flex-1 min-h-0 px-6 pb-6">
-            <div className="grid h-full grid-cols-3 gap-3">
-              {([
-                { postAlt: "Top exposure post 1", sponsorSrc: "/sponsor-logos/puma-logo.svg", sponsorAlt: "PUMA", appearances: 128 },
-                { postAlt: "Top exposure post 2", sponsorSrc: "/sponsor-logos/brainport.png", sponsorAlt: "Brainport", appearances: 97 },
-                { postAlt: "Top exposure post 3", sponsorSrc: "/sponsor-logos/energiedirect.png", sponsorAlt: "EnergieDirect", appearances: 84 },
-              ] as const).map((item) => (
-                <div
-                  key={item.sponsorSrc}
-                  className="flex h-full flex-col overflow-hidden"
-                >
-                  <div className="relative flex-1 min-h-0 w-full">
-                    <Image
-                      src="/posts/post-template.png"
-                      alt={item.postAlt}
-                      fill
-                      sizes="(min-width: 768px) 220px, 33vw"
-                      className="object-cover"
-                    />
-                  </div>
-                  <div className="shrink-0 flex flex-col items-center justify-center gap-1 border-t border-border bg-muted px-2 py-2">
-                    <Image
-                      src={item.sponsorSrc}
-                      alt={item.sponsorAlt}
-                      width={120}
-                      height={40}
-                      className="h-5 w-auto object-contain"
-                    />
-                    <div className="text-xs text-muted-foreground tabular-nums text-center">
-                      {item.appearances.toLocaleString()} <br/> appearances
+          <div className="px-6 pb-5 space-y-3">
+            {([
+              {
+                firstName: "Guus",
+                lastName: "Til",
+                imageSrc: "/player_images/20.png",
+                marketValue: "€9m",
+                sentimentLabel: "70% positive",
+                sentimentVariant: "positive" as const,
+              },
+              {
+                firstName: "Johan",
+                lastName: "Bakayoko",
+                imageSrc: "/player_images/4.png",
+                marketValue: "€20m",
+                sentimentLabel: "65% negative",
+                sentimentVariant: "negative" as const,
+              },
+            ] as const).map((player) => {
+              const isPositive = player.sentimentVariant === "positive"
+              return (
+                <div key={player.lastName} className="rounded-xl bg-muted p-3 pb-0">
+                  <div className="flex items-center gap-3">
+                    <div className="shrink-0">
+                      <Image
+                        src={player.imageSrc}
+                        alt={player.lastName}
+                        width={128}
+                        height={256}
+                        className="h-full w-auto object-contain object-bottom"
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div
+                        className={
+                          "relative inline-flex overflow-hidden px-3 py-1 text-white" +
+                          " before:absolute before:inset-0 before:bg-black" +
+                          " before:[clip-path:polygon(0_0,100%_0,calc(100%_-_10px)_100%,0_100%)]"
+                        }
+                      >
+                        <div className="relative z-10">
+                          <div className="text-xs leading-none text-white/80">{player.firstName}</div>
+                          <div className="font-psv-branding italic text-2xl leading-none">{player.lastName}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 space-y-1 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Market value:</span>
+                          <span className="font-semibold text-foreground">{player.marketValue}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Sentiment:</span>
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-md px-2 py-0.5 text-sm font-semibold",
+                              isPositive ? "bg-green-500/20 text-green-700" : "bg-red-500/20 text-red-700"
+                            )}
+                          >
+                            {player.sentimentLabel}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-6 grid w-full grid-cols-1 gap-6 md:grid-cols-3 md:items-start">
+        <div
+          ref={mentionsShareRef}
+          className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1"
+        >
+          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <PieChartIcon className="h-4 w-4" />
+              <span>MENTIONS SHARE</span>
+            </div>
+            <div className="text-sm text-muted-foreground">{periodLabel}</div>
+          </div>
+
+          <div className="px-6 pb-6">
+            <ChartContainer config={mentionsShare.config} className="h-[200px] w-full aspect-auto">
+              <PieChart>
+                <ChartTooltip
+                  cursor={false}
+                  content={({ active, payload }) => {
+                    if (!active || !payload || payload.length === 0) return null
+                    const item = payload[0] as unknown as { name?: unknown; value?: unknown; payload?: { name?: unknown } }
+                    const name = String(item?.name ?? item?.payload?.name ?? "")
+                    const value = typeof item?.value === "number" ? item.value : Number(item?.value)
+
+                    return (
+                      <div className="rounded-lg border border-black bg-black px-3 py-2 shadow-md text-white">
+                        <div className="text-sm font-semibold text-white">{legendLabel(name)}</div>
+                        <div className="mt-1 text-xs text-white/80 tabular-nums">
+                          {Number.isFinite(value) ? `${value.toFixed(0)}%` : "-"}
+                        </div>
+                      </div>
+                    )
+                  }}
+                />
+                <Pie
+                  data={mentionsShare.data as unknown as Array<{ name: string; value: number }>}
+                  dataKey="value"
+                  nameKey="name"
+                  outerRadius={92}
+                  paddingAngle={0}
+                  stroke="transparent"
+                  strokeWidth={0}
+                >
+                  {mentionsShare.data.map((item) => (
+                    <Cell key={item.key} fill={`var(--color-${item.key})`} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
+              {mentionsShare.data.map((item) => (
+                <div key={item.key} className="flex items-center gap-2">
+                  <span className="h-[10px] w-[10px] rounded-[2px]" style={{ backgroundColor: item.color }} aria-hidden="true" />
+                  <span>{legendLabel(item.name)}</span>
+                </div>
               ))}
             </div>
+          </div>
+        </div>
+
+        <div
+          className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-2"
+          style={hotTopicsHeightPx ? { height: hotTopicsHeightPx } : undefined}
+        >
+          <div className="px-6 pt-6 pb-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="text-base font-semibold font-psv-branding">HOT TOPICS</div>
+              <div className="text-sm text-muted-foreground">{periodLabel}</div>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto border-t border-border">
+            <table className="w-full table-fixed text-xs">
+              <thead>
+                <tr>
+                  <th className="sticky top-0 z-10 w-12 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">#</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">TOPIC</th>
+                  <th className="sticky top-0 z-10 w-24 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">
+                    MENTIONS
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(
+                  [
+                    { rank: 1, topic: "Referee decision in the second half", mentions: 1240 },
+                    { rank: 2, topic: "Tactical change after halftime", mentions: 980 },
+                    { rank: 3, topic: "Performance of the midfield trio", mentions: 860 },
+                    { rank: 4, topic: "Injury update and squad depth", mentions: 740 },
+                    { rank: 5, topic: "VAR check and offside call", mentions: 690 },
+                    { rank: 6, topic: "Substitution impact late in the game", mentions: 640 },
+                    { rank: 7, topic: "Goalkeeper distribution and build-up play", mentions: 610 },
+                    { rank: 8, topic: "Set-piece defending and marking", mentions: 580 },
+                    { rank: 9, topic: "Atmosphere in the stadium", mentions: 540 },
+                    { rank: 10, topic: "Post-match interview highlights", mentions: 510 },
+                  ] as const
+                ).map((row, index) => (
+                  <tr key={row.rank} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
+                    <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
+                    <td className="px-3 py-2">
+                      <div className="truncate">{row.topic}</div>
+                    </td>
+                    <td className="w-24 px-3 py-2 text-right font-medium tabular-nums">{row.mentions.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-6 grid w-full grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1">
+          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <PieChartIcon className="h-4 w-4" />
+              <span>PLATFORM SHARE</span>
+            </div>
+            <div className="text-sm text-muted-foreground">{periodLabel}</div>
+          </div>
+
+          <div className="px-6 pb-6">
+            <ChartContainer config={platformShare.config} className="h-[200px] w-full aspect-auto">
+              <PieChart>
+                <ChartTooltip
+                  cursor={false}
+                  content={({ active, payload }) => {
+                    if (!active || !payload || payload.length === 0) return null
+                    const item = payload[0] as unknown as { name?: unknown; value?: unknown; payload?: { name?: unknown } }
+                    const name = String(item?.name ?? item?.payload?.name ?? "")
+                    const value = typeof item?.value === "number" ? item.value : Number(item?.value)
+
+                    return (
+                      <div className="rounded-lg border border-black bg-black px-3 py-2 shadow-md text-white">
+                        <div className="text-sm font-semibold text-white">{legendLabel(name)}</div>
+                        <div className="mt-1 text-xs text-white/80 tabular-nums">
+                          {Number.isFinite(value) ? `${value.toFixed(0)}%` : "-"}
+                        </div>
+                      </div>
+                    )
+                  }}
+                />
+                <Pie
+                  data={platformShare.data as unknown as Array<{ name: string; value: number }>}
+                  dataKey="value"
+                  nameKey="name"
+                  outerRadius={92}
+                  paddingAngle={0}
+                  stroke="transparent"
+                  strokeWidth={0}
+                >
+                  {platformShare.data.map((item) => (
+                    <Cell key={item.key} fill={`var(--color-${item.key})`} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
+              {platformShare.data.map((item) => (
+                <div key={item.key} className="flex items-center gap-2">
+                  <span className="h-[10px] w-[10px] rounded-[2px]" style={{ backgroundColor: item.color }} aria-hidden="true" />
+                  <span>{legendLabel(item.name)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1">
+          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
+            <div className="text-base font-semibold font-psv-branding">TOP CONTENT TYPE</div>
+            <div className="text-sm text-muted-foreground">{periodLabel}</div>
+          </div>
+
+          <div className="px-6 pb-6 space-y-5">
+            {([
+              { label: "Video", value: 40 },
+              { label: "Stories", value: 27 },
+              { label: "Photo", value: 18 },
+              { label: "Text", value: 15 },
+            ] as const).map((item) => (
+              <div key={item.label}>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="font-medium">{item.label}</div>
+                  <div className="font-semibold tabular-nums">{item.value}%</div>
+                </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-black" style={{ width: `${item.value}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1">
+          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
+            <div className="text-base font-semibold font-psv-branding">TOP HASHTAGS</div>
+            <div className="text-sm text-muted-foreground">{periodLabel}</div>
+          </div>
+
+          <div className="px-6 pb-6 space-y-5">
+            {([
+              { tag: "#PSV", value: 32, deltaPct: 8.2 },
+              { tag: "#UCL", value: 24, deltaPct: -3.4 },
+              { tag: "#Eredivisie", value: 18, deltaPct: 2.1 },
+              { tag: "#PSVFans", value: 12, deltaPct: -1.6 },
+            ] as const).map((item) => {
+              const up = item.deltaPct >= 0
+              return (
+                <div key={item.tag}>
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="font-medium">{item.tag}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-semibold tabular-nums">{item.value}%</div>
+                      <div className={cn("text-xs font-semibold tabular-nums", up ? "text-green-600" : "text-red-600")}>
+                        {up ? "+" : ""}
+                        {item.deltaPct.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-black" style={{ width: `${item.value}%` }} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       </section>

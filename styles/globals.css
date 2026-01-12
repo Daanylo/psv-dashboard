@@ -177,3 +177,48 @@
     background-color: rgb(113, 113, 122);
   }
 }
+
+@keyframes psv_logo_marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes psv_logo_marquee_reverse {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.psv-logo-marquee {
+  animation: psv_logo_marquee 22s linear infinite;
+}
+
+.psv-logo-marquee--a {
+  animation-duration: 20s;
+}
+
+.psv-logo-marquee--b {
+  animation-name: psv_logo_marquee_reverse;
+  animation-duration: 26s;
+}
+
+.psv-logo-marquee--c {
+  animation-duration: 32s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .psv-logo-marquee {
+    animation: none !important;
+  }
+
+  .psv-hero-grid {
+    mask-image: none;
+  }
+}

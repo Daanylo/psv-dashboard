@@ -171,7 +171,8 @@ export default function AverageTeamSentimentGauge() {
             cy="70%"
             cx="50%"
             stroke="transparent"
-            paddingAngle={2}
+            strokeWidth={0}
+            paddingAngle={0}
             cornerRadius={5}
           >
             {sentimentData.map((item) => (

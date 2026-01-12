@@ -1,20 +1,132 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronRight, ChevronDown } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Calendar as CalendarIcon, ChevronDown, ChevronRight, Download, Filter } from "lucide-react"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+type DateRangeKey = "7" | "30" | "90" | "365"
+
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+function getDateRange(days: number, endDate: Date) {
+  const end = new Date(endDate)
+  end.setHours(0, 0, 0, 0)
+
+  const start = new Date(end)
+  start.setDate(start.getDate() - (days - 1))
+
+  return { start, end }
+}
 
 export default function BrandingPage() {
+  const [search, setSearch] = useState("")
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [brandDropdownOpen, setBrandDropdownOpen] = useState(false)
 
+  const dateRangeDays = useMemo(() => {
+    switch (dateRangeKey) {
+      case "7":
+        return 7
+      case "30":
+        return 30
+      case "90":
+        return 90
+      case "365":
+        return 365
+    }
+  }, [dateRangeKey])
+
+  const { start, end } = useMemo(() => getDateRange(dateRangeDays, new Date()), [dateRangeDays])
+  const dateRangeLabel = useMemo(
+    () => `${formatShortDate(start)} - ${formatShortDate(end)}`,
+    [start, end]
+  )
+
   return (
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="max-w-[300px] flex-1">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search..."
+            className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-stretch">
+              <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+                <CalendarIcon className="h-4 w-4" />
+                {dateRangeLabel}
+              </div>
+              <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
+                <SelectTrigger className="h-9 rounded-l-none border-l-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="365">Last 365 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsFilterOpen((v) => !v)}
+              className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
+              aria-haspopup="menu"
+              aria-expanded={isFilterOpen}
+            >
+              <Filter className="h-4 w-4" />
+              <span>Filter</span>
+            </button>
+
+            {isFilterOpen ? (
+              <div
+                role="menu"
+                className="bg-popover text-popover-foreground absolute right-0 top-full z-50 mt-2 w-56 rounded-md border p-2 text-sm shadow-md"
+              >
+                <div className="px-2 py-1.5 text-muted-foreground">No filters yet</div>
+              </div>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
+          >
+            <Download className="h-4 w-4" />
+            <span>Export</span>
+          </button>
+        </div>
+      </div>
+
       <section>
         <h1 className="text-2xl font-bold font-psv-branding">OVERVIEW</h1>
         <div className="mt-4 space-y-4">

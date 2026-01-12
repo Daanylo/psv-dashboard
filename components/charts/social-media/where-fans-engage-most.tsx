@@ -91,7 +91,8 @@ export default function WhereFansEngageMost() {
             nameKey="label"
             innerRadius="0%"
             outerRadius="80%"
-            strokeWidth={2}
+            stroke="transparent"
+            strokeWidth={0}
             paddingAngle={0}
           >
             {data.map((item) => (

@@ -102,6 +102,8 @@ export default function SentimentGauge() {
             paddingAngle={0}
             cornerRadius={5}
             cy="100%"
+            stroke="transparent"
+            strokeWidth={0}
           >
             <Label
               content={({ viewBox }) => {

@@ -19,6 +19,7 @@ type Comment = {
   post_id: string
   topic_id: number
   comment_text: string
+  created_at?: string | number
 }
 
 async function loadPlatforms(): Promise<Platform[]> {
@@ -79,6 +80,7 @@ export async function GET() {
     const windowEnd = end.getTime()
 
     const recentComments = comments.filter((comment) => {
+      if (comment.created_at == null) return false
       const created = new Date(comment.created_at).getTime()
       return Number.isFinite(created) && created >= windowStart && created <= windowEnd
     })

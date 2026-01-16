@@ -3,9 +3,9 @@ import fs from "fs"
 import path from "path"
 import OpenAI from "openai"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null
 
 interface PlayerSentiment {
   name: string
@@ -17,6 +17,12 @@ interface PlayerSentiment {
 
 export async function GET(request: Request) {
   try {
+    if (!openai) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is not configured" },
+        { status: 501 },
+      )
+    }
     const { searchParams } = new URL(request.url)
     const sentiment = searchParams.get('sentiment') === 'true'
 

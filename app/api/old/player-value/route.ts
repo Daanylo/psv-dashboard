@@ -3,9 +3,9 @@ import fs from "fs"
 import path from "path"
 import OpenAI from "openai"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null
 
 interface PlayerSentiment {
   name: string
@@ -41,6 +41,12 @@ function getMarketValueForPlayer(playerName: string, marketValueCsv: string) {
 
 export async function GET(request: Request) {
   try {
+    if (!openai) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is not configured" },
+        { status: 501 },
+      )
+    }
     const filePath = path.join(process.cwd(), "public", "data", "psv_transfermarket_updated.csv");
     const csvText = fs.readFileSync(filePath, "utf-8");
 

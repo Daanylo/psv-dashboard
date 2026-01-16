@@ -39,10 +39,6 @@ type SentimentMarketEntry = {
   sentimentBadgeColor?: string
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
-
 const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000
 const BATCH_SIZE = 50
 
@@ -132,6 +128,7 @@ const chunk = <T>(arr: T[], size: number): T[][] => {
 async function mapCommentsToPlayers(
   comments: CommentRecord[],
   players: PlayerAlias[],
+  openai: OpenAI,
 ): Promise<Record<string | number, string[]>> {
   const mappings: Record<string | number, string[]> = {}
 
@@ -266,6 +263,15 @@ function aggregatePlayerSentiment(
 
 export async function GET() {
   try {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is not configured" },
+        { status: 501 },
+      )
+    }
+
+    const openai = new OpenAI({ apiKey })
     const [players, comments] = await Promise.all([
       loadPlayers(),
       loadRecentComments(),
@@ -278,7 +284,7 @@ export async function GET() {
       )
     }
 
-    const commentToPlayers = await mapCommentsToPlayers(comments, players)
+    const commentToPlayers = await mapCommentsToPlayers(comments, players, openai)
     const playerSentiments = aggregatePlayerSentiment(
       comments,
       commentToPlayers,

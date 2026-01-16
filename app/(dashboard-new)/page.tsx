@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   ArrowRight,
   ArrowUpDown,
@@ -47,6 +47,7 @@ type SentimentJourneyPoint = {
   positiveCount: number
   negativeCount: number
   negativeDisplay: number
+  totalCount: number
   isoStart: string
   isoEnd: string
 }
@@ -67,11 +68,32 @@ type SentimentJourneyEvent = {
 
 
 type PlayerMentionsStats = {
+  name: string
+  shirtNumber: number | null
   mentions: number
   mentionsChangePct: number
   positivePct: number
   neutralPct: number
   negativePct: number
+}
+
+type OverviewSummaryResponse = {
+  meta: {
+    start: string
+    end: string
+    previousStart: string
+    previousEnd: string
+    granularity: "day" | "week"
+  }
+  sentimentJourney: {
+    points: SentimentJourneyPoint[]
+    summary: SentimentJourneySummary
+    events: SentimentJourneyEvent[]
+  }
+  playerMentions: {
+    mostPopular: PlayerMentionsStats | null
+    mostControversial: PlayerMentionsStats | null
+  }
 }
 
 const sentimentJourneyChartConfig: ChartConfig = {
@@ -194,6 +216,7 @@ function makeMockJourney(
       positiveCount: pos,
       negativeCount: neg,
       negativeDisplay: -neg,
+      totalCount: total,
       isoStart: toIsoDateOnly(visibleStart),
       isoEnd: toIsoDateOnly(visibleEnd),
     })
@@ -221,6 +244,8 @@ function makeMockPlayerMentionsStats(seedBase: number): PlayerMentionsStats {
   const totalPct = positivePct + neutralPct + negativePct
 
   return {
+    name: "Mock Player",
+    shirtNumber: null,
     mentions,
     mentionsChangePct: percentChange(mentions, prevMentions),
     positivePct: (positivePct / totalPct) * 100,
@@ -304,7 +329,7 @@ function SentimentJourneyEventOverlay({
               >
                 <div
                   className={
-                    "flex h-7 items-center overflow-hidden rounded-md border border-border bg-background " +
+                    "flex items-center overflow-hidden rounded-md border border-border bg-background " +
                     "transition-[width,padding,justify-content] duration-150 ease-out " +
                     "w-7 justify-center px-0 " +
                     "group-hover:w-[180px] group-hover:justify-start group-hover:px-2"
@@ -360,6 +385,11 @@ export default function HomePage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
+  const [journeyNormalize, setJourneyNormalize] = useState(false)
+
+  const [overview, setOverview] = useState<OverviewSummaryResponse | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState<boolean>(true)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
 
   const dateRangeDays = useMemo(() => {
     switch (dateRangeKey) {
@@ -401,56 +431,137 @@ export default function HomePage() {
   const psvMarqueeRowB = useMemo(() => Array.from({ length: 9 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
   const psvMarqueeRowC = useMemo(() => Array.from({ length: 8 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
 
-  const playerMentions = useMemo(() => {
-    const seedBase =
-      start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 4242
+  const toIsoDateOnlyLocal = (d: Date) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, "0")
+    const day = String(d.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
 
-    return {
-      mostPopular: makeMockPlayerMentionsStats(seedBase + 20),
-      mostControversial: makeMockPlayerMentionsStats(seedBase + 4),
+  useEffect(() => {
+    setOverviewLoading(true)
+    setOverviewError(null)
+
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        const url = new URL("/api/new/overview/summary", window.location.origin)
+        url.searchParams.set("start", toIsoDateOnlyLocal(start))
+        url.searchParams.set("end", toIsoDateOnlyLocal(end))
+        url.searchParams.set(
+          "granularity",
+          journeyGranularity === "weekly" ? "week" : "day",
+        )
+
+        const res = await fetch(url.toString(), {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`API ${res.status}`)
+        const data = (await res.json()) as OverviewSummaryResponse
+        setOverview(data)
+        setOverviewLoading(false)
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+
+        const message =
+          err instanceof Error ? err.message : "Failed to load overview"
+        setOverviewError(message)
+        setOverviewLoading(false)
+      }
     }
-  }, [start])
 
-  const sentimentJourneyData = useMemo(() => {
-    const days =
-      Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
-    const prevEnd = addDaysLocal(start, -1)
-    const prevStart = addDaysLocal(prevEnd, -(days - 1))
-
-    const seedBase =
-      start.getFullYear() * 10000 +
-      (start.getMonth() + 1) * 100 +
-      start.getDate() +
-      (journeyGranularity === "weekly" ? 777 : 333)
-
-    const current = makeMockJourney(start, end, journeyGranularity, seedBase)
-    const previous = makeMockJourney(prevStart, prevEnd, journeyGranularity, seedBase + 999)
-
-    const summary: SentimentJourneySummary = {
-      positiveCount: current.positiveCount,
-      negativeCount: current.negativeCount,
-      positiveChangePct: percentChange(current.positiveCount, previous.positiveCount),
-      negativeChangePct: percentChange(current.negativeCount, previous.negativeCount),
-    }
-
-    return { points: current.points, summary }
+    void run()
+    return () => controller.abort()
   }, [start, end, journeyGranularity])
 
+  const playerMentions = useMemo(() => {
+    const fallback = {
+      mostPopular: {
+        name: "—",
+        shirtNumber: null,
+        mentions: 0,
+        mentionsChangePct: 0,
+        positivePct: 0,
+        neutralPct: 0,
+        negativePct: 0,
+      },
+      mostControversial: {
+        name: "—",
+        shirtNumber: null,
+        mentions: 0,
+        mentionsChangePct: 0,
+        positivePct: 0,
+        neutralPct: 0,
+        negativePct: 0,
+      },
+    }
+
+    if (!overview?.playerMentions) return fallback
+    return {
+      mostPopular: overview.playerMentions.mostPopular ?? fallback.mostPopular,
+      mostControversial:
+        overview.playerMentions.mostControversial ?? fallback.mostControversial,
+    }
+  }, [overview])
+
+  const sentimentJourneyData = useMemo(() => {
+    const empty: { points: SentimentJourneyPoint[]; summary: SentimentJourneySummary } = {
+      points: [],
+      summary: {
+        positiveCount: 0,
+        negativeCount: 0,
+        positiveChangePct: 0,
+        negativeChangePct: 0,
+      },
+    }
+
+    return overview?.sentimentJourney
+      ? { points: overview.sentimentJourney.points, summary: overview.sentimentJourney.summary }
+      : empty
+  }, [overview])
+
   const sentimentJourneyEvents = useMemo(() => {
-    const seedBase =
-      start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 909
-    return makeMockJourneyEvents(sentimentJourneyData.points, seedBase)
-  }, [sentimentJourneyData.points, start])
+    return overview?.sentimentJourney?.events ?? ([] as SentimentJourneyEvent[])
+  }, [overview])
 
   const sentimentJourneyDomainMax = useMemo(() => {
-    const maxAbs = sentimentJourneyData.points.reduce((acc, p) => {
-      const candidate = Math.max(p.positiveCount, p.negativeCount)
-      return Math.max(acc, candidate)
-    }, 0)
+    const maxPositive = sentimentJourneyData.points.reduce(
+      (acc, p) => Math.max(acc, p.positiveCount),
+      0,
+    )
+    const maxNegative = sentimentJourneyData.points.reduce(
+      (acc, p) => Math.max(acc, p.negativeCount),
+      0,
+    )
 
+    const maxAbs = Math.max(maxPositive, maxNegative)
     if (!maxAbs) return 1000
-    const rounded = Math.ceil(maxAbs / 100) * 100
-    return rounded
+    return Math.ceil(maxAbs / 100) * 100
+  }, [sentimentJourneyData.points])
+
+  const sentimentJourneyChartData = useMemo(() => {
+    return sentimentJourneyData.points.map((point) => {
+      const total = Number(point.totalCount ?? 0)
+      const pos = Number(point.positiveCount ?? 0)
+      const neg = Number(point.negativeCount ?? 0)
+
+      const positivePct = total > 0 ? (pos / total) * 100 : 0
+      const negativePct = total > 0 ? (neg / total) * 100 : 0
+      const neutralPctRaw = total > 0 ? 100 - positivePct - negativePct : 0
+      const neutralPct = clamp(neutralPctRaw, 0, 100)
+      const neutralPctHalf = neutralPct / 2
+
+      return {
+        ...point,
+        positivePct,
+        negativePct,
+        negativePctDisplay: -negativePct,
+        neutralPct,
+        neutralPctHalf,
+        neutralPctHalfDisplay: -neutralPctHalf,
+      }
+    })
   }, [sentimentJourneyData.points])
 
   return (
@@ -628,6 +739,16 @@ export default function HomePage() {
               </button>
             </div>
 
+            <label className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground hover:bg-accent">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-black"
+                checked={journeyNormalize}
+                onChange={(e) => setJourneyNormalize(e.target.checked)}
+              />
+              <span>Normalize</span>
+            </label>
+
             <button
               type="button"
               className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
@@ -653,22 +774,31 @@ export default function HomePage() {
               }
             >
               <BarChart
-                data={sentimentJourneyData.points}
+                data={sentimentJourneyChartData}
                 margin={{ top: 12, right: 18, left: 0, bottom: 0 }}
                 stackOffset="sign"
+
               >
                 <CartesianGrid strokeDasharray="3 3" />
-                <ReferenceLine y={0} stroke="var(--background)" strokeWidth={10} />
-                <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                <ReferenceLine yAxisId="count" y={0} stroke="var(--background)" strokeWidth={10} />
+                <ReferenceLine yAxisId="count" y={0} stroke="hsl(var(--border))" />
                 <ChartTooltip
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null
-                    const point = payload[0]?.payload as SentimentJourneyPoint | undefined
+                    const point = payload[0]?.payload as
+                      | (SentimentJourneyPoint & {
+                          positivePct?: number
+                          negativePct?: number
+                          neutralPct?: number
+                        })
+                      | undefined
                     if (!point) return null
 
-                    const total = point.positiveCount + point.negativeCount
+                    const total = Number(point.totalCount ?? 0)
                     const netPct =
-                      total === 0 ? 0 : ((point.positiveCount - point.negativeCount) / total) * 100
+                      total === 0
+                        ? 0
+                        : ((point.positiveCount - point.negativeCount) / total) * 100
                     return (
                       <div className="rounded-lg bg-black px-3 py-2 text-white shadow-md">
                         <div className="text-sm font-semibold">{point.label}</div>
@@ -678,17 +808,36 @@ export default function HomePage() {
                               <ThumbsUp className="h-4 w-4" />
                             </span>
                             <span className="font-medium tabular-nums">
-                              {point.positiveCount.toLocaleString()}
+                              {journeyNormalize
+                                ? `${(point.positivePct ?? 0).toFixed(0)}%`
+                                : point.positiveCount.toLocaleString()}
                             </span>
                           </div>
+                          {journeyNormalize ? (
+                            <div className="flex items-center justify-between gap-6">
+                              <span className="inline-flex items-center gap-2 text-white/70">
+                                <Smile className="h-4 w-4" />
+                              </span>
+                              <span className="font-medium tabular-nums">
+                                {(point.neutralPct ?? 0).toFixed(0)}%
+                              </span>
+                            </div>
+                          ) : null}
                           <div className="flex items-center justify-between gap-6">
                             <span className="inline-flex items-center gap-2 text-red-500">
                               <ThumbsDown className="h-4 w-4" />
                             </span>
                             <span className="font-medium tabular-nums">
-                              {point.negativeCount.toLocaleString()}
+                              {journeyNormalize
+                                ? `${(point.negativePct ?? 0).toFixed(0)}%`
+                                : point.negativeCount.toLocaleString()}
                             </span>
                           </div>
+                          {journeyNormalize ? (
+                            <div className="pt-1 text-[11px] text-white/70 tabular-nums">
+                              Total: {total.toLocaleString()}
+                            </div>
+                          ) : null}
                           <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/70">
                             <LineChartIcon className="h-3.5 w-3.5" />
                             <span className="tabular-nums">{netPct.toFixed(0)}%</span>
@@ -700,15 +849,88 @@ export default function HomePage() {
                 />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} />
                 <YAxis
+                  yAxisId="count"
                   width={40}
-                  domain={[-sentimentJourneyDomainMax, sentimentJourneyDomainMax]}
-                  ticks={[-sentimentJourneyDomainMax, 0, sentimentJourneyDomainMax]}
+                  domain={
+                    journeyNormalize
+                      ? ([-100, 100] as const)
+                      : ([-sentimentJourneyDomainMax, sentimentJourneyDomainMax] as const)
+                  }
+                  ticks={
+                    journeyNormalize
+                      ? ([-100, 0, 100] as const)
+                      : ([-sentimentJourneyDomainMax, 0, sentimentJourneyDomainMax] as const)
+                  }
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(v) => Math.abs(Number(v)).toLocaleString()}
+                  tickFormatter={(v) =>
+                    journeyNormalize
+                      ? `${Math.abs(Number(v)).toFixed(0)}%`
+                      : Math.abs(Number(v)).toLocaleString()
+                  }
                 />
-                <Bar dataKey="positiveCount" stackId="totals" radius={0} className="fill-green-500" />
-                <Bar dataKey="negativeDisplay" stackId="totals" radius={0} className="fill-red-500" />
+
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-neg-neutral"
+                    yAxisId="count"
+                    dataKey="neutralPctHalfDisplay"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-gray-300 dark:fill-gray-700"
+                  />
+                ) : null}
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-neg"
+                    yAxisId="count"
+                    dataKey="negativePctDisplay"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-red-500"
+                  />
+                ) : null}
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-pos-neutral"
+                    yAxisId="count"
+                    dataKey="neutralPctHalf"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-gray-300 dark:fill-gray-700"
+                  />
+                ) : null}
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-pos"
+                    yAxisId="count"
+                    dataKey="positivePct"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-green-500"
+                  />
+                ) : null}
+
+                {!journeyNormalize ? (
+                  <Bar
+                    key="raw-pos"
+                    yAxisId="count"
+                    dataKey="positiveCount"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-green-500"
+                  />
+                ) : null}
+                {!journeyNormalize ? (
+                  <Bar
+                    key="raw-neg"
+                    yAxisId="count"
+                    dataKey="negativeDisplay"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-red-500"
+                  />
+                ) : null}
               </BarChart>
             </ChartContainer>
           </div>
@@ -787,7 +1009,11 @@ export default function HomePage() {
           <div className="mt-5 flex items-end gap-4">
             <div className="shrink-0 self-end">
               <Image
-                src="/player_images/20.png"
+                src={
+                  playerMentions.mostPopular.shirtNumber
+                    ? `/player_images/${playerMentions.mostPopular.shirtNumber}.png`
+                    : "/no_image.png"
+                }
                 alt="Most popular player"
                 width={256}
                 height={256}
@@ -804,8 +1030,13 @@ export default function HomePage() {
                 }
               >
                 <div className="relative z-10">
-                  <div className="text-xs leading-none text-white/80">Guus</div>
-                  <div className="font-psv-branding italic text-3xl leading-none">Til</div>
+                  <div className="text-xs leading-none text-white/80">
+                    {playerMentions.mostPopular.name.split(" ").slice(0, -1).join(" ") ||
+                      playerMentions.mostPopular.name}
+                  </div>
+                  <div className="font-psv-branding italic text-3xl leading-none">
+                    {playerMentions.mostPopular.name.split(" ").slice(-1)[0]}
+                  </div>
                 </div>
               </div>
 
@@ -837,7 +1068,7 @@ export default function HomePage() {
                     style={{ width: `${playerMentions.mostPopular.positivePct}%` }}
                   />
                   <div
-                    className="h-full bg-muted-foreground/40"
+                    className="h-full bg-gray-300 dark:bg-gray-700"
                     style={{ width: `${playerMentions.mostPopular.neutralPct}%` }}
                   />
                   <div
@@ -858,7 +1089,11 @@ export default function HomePage() {
           <div className="mt-5 flex items-end gap-4">
             <div className="shrink-0 self-end">
               <Image
-                src="/player_images/4.png"
+                src={
+                  playerMentions.mostControversial.shirtNumber
+                    ? `/player_images/${playerMentions.mostControversial.shirtNumber}.png`
+                    : "/no_image.png"
+                }
                 alt="Most controversial player"
                 width={256}
                 height={256}
@@ -875,8 +1110,15 @@ export default function HomePage() {
                 }
               >
                 <div className="relative z-10">
-                  <div className="text-xs leading-none text-white/80">Armando</div>
-                  <div className="font-psv-branding italic text-3xl leading-none">Obispo</div>
+                  <div className="text-xs leading-none text-white/80">
+                    {playerMentions.mostControversial.name
+                      .split(" ")
+                      .slice(0, -1)
+                      .join(" ") || playerMentions.mostControversial.name}
+                  </div>
+                  <div className="font-psv-branding italic text-3xl leading-none">
+                    {playerMentions.mostControversial.name.split(" ").slice(-1)[0]}
+                  </div>
                 </div>
               </div>
 
@@ -908,7 +1150,7 @@ export default function HomePage() {
                     style={{ width: `${playerMentions.mostControversial.positivePct}%` }}
                   />
                   <div
-                    className="h-full bg-muted-foreground/40"
+                    className="h-full bg-gray-300 dark:bg-gray-700"
                     style={{ width: `${playerMentions.mostControversial.neutralPct}%` }}
                   />
                   <div

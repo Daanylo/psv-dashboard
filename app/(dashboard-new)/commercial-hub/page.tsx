@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import Image from "next/image"
 import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts"
 import {
@@ -25,24 +25,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { cn } from "@/lib/utils"
 
-type DateRangeKey = "7" | "30" | "90" | "365"
+type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 type ExposureGranularity = "daily" | "weekly"
 
-const sponsorLogos = [
-  { src: "/sponsor-logos/puma-white.png", alt: "PUMA" },
-  { src: "/sponsor-logos/brainport-white.png", alt: "Brainport" },
-  { src: "/sponsor-logos/energiedirect.png", alt: "EnergieDirect" },
-  { src: "/sponsor-logos/simac-logo-rgb-transp.gif", alt: "Simac" },
-  { src: "/sponsor-logos/goodhabitz-logo-png.png", alt: "GoodHabitz" },
-  { src: "/sponsor-logos/joe-logo.svg", alt: "JOE" },
-  { src: "/sponsor-logos/50plus-logo.svg", alt: "50+" },
-] as const
-
-const sponsorLogosRowB = [...sponsorLogos.slice(2), ...sponsorLogos.slice(0, 2)] as const
-const sponsorLogosRowC = [...sponsorLogos.slice(4), ...sponsorLogos.slice(0, 4)] as const
+type Brand = {
+  id: number
+  name: string
+  slug: string
+  color: string
+  logo_light: string | null
+  logo_dark: string | null
+}
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
@@ -50,6 +47,20 @@ function formatShortDate(date: Date) {
     day: "numeric",
     year: "numeric",
   })
+}
+
+function toIsoDateOnly(date: Date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLocalIsoDate(value: string) {
+  const [y, m, d] = value.split("-").map(Number)
+  return new Date(y, m - 1, d)
 }
 
 function getDateRange(days: number, endDate: Date) {
@@ -124,6 +135,27 @@ export default function CommercialHubPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   const [exposureGranularity, setExposureGranularity] = useState<ExposureGranularity>("daily")
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([])
+  const [availableBrands, setAvailableBrands] = useState<Brand[]>([])
+
+  useEffect(() => {
+    fetch("/api/new/settings/brands").then(r => r.json()).then(data => {
+        setAvailableBrands(data)
+         // Select all by default
+        setSelectedBrands(data.map((b: Brand) => b.slug))
+    })
+  }, [])
+
+  // Custom date range state (defaults to last 30 days)
+  const defaultEnd = useMemo(() => new Date(), [])
+  const defaultStart = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    return d
+  }, [])
+  
+  const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
+  const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
 
   const dateRangeDays = useMemo(() => {
     switch (dateRangeKey) {
@@ -135,10 +167,21 @@ export default function CommercialHubPage() {
         return 90
       case "365":
         return 365
+      default:
+        return 30
     }
   }, [dateRangeKey])
 
-  const { start, end } = useMemo(() => getDateRange(dateRangeDays, new Date()), [dateRangeDays])
+  const { start, end } = useMemo(() => {
+    if (dateRangeKey === "custom") {
+      return {
+        start: parseLocalIsoDate(customStart),
+        end: parseLocalIsoDate(customEnd)
+      }
+    }
+    return getDateRange(dateRangeDays, new Date())
+  }, [dateRangeDays, dateRangeKey, customStart, customEnd])
+
   const dateRangeLabel = useMemo(
     () => `${formatShortDate(start)} - ${formatShortDate(end)}`,
     [start, end]
@@ -164,246 +207,221 @@ export default function CommercialHubPage() {
         return "Last 90 days"
       case "365":
         return "Last 365 days"
+      case "custom":
+        return "Custom period"
     }
   }, [dateRangeKey])
 
-  const postOverview = useMemo(() => {
-    const seedCurrent = Math.floor(start.getTime() / 86400000)
-    const seedPrevious = Math.floor(previousStart.getTime() / 86400000)
-    const randCurrent = mulberry32(seedCurrent)
-    const randPrevious = mulberry32(seedPrevious)
+  const [postOverview, setPostOverview] = useState<{
+    posts: {
+      id: string
+      imageSrc: string
+      date: Date
+      likes: number
+      comments: number
+      caption: string
+      impressions: number
+      visibilityScore: number | null
+      visibilityBrand: string | null
+      sentimentScore: number | null
+    }[]
+    metrics: {
+      posts: { label: string; value: number; previousValue: number }
+      impressions: { label: string; value: number; previousValue: number }
+      engagement: { label: string; value: number; previousValue: number }
+      brandExposures: { label: string; value: number; previousValue: number }
+      brandImpressions: { label: string; value: number; previousValue: number }
+      avgVisibility: { label: string; value: number; previousValue: number }
+    }
+    trends: { date: string; [key: string]: any }[]
+    visibilityShare: { brand: string; value: number }[]
+    missedOpportunities: { id: string; impressions: number; visibilityPct: number; imageSrc: string }[]
+  }>({
+    posts: [],
+    metrics: {
+      posts: { label: "Posts", value: 0, previousValue: 0 },
+      impressions: { label: "Impressions", value: 0, previousValue: 0 },
+      engagement: { label: "Engagement", value: 0, previousValue: 0 },
+      brandExposures: { label: "Brand Exposures", value: 0, previousValue: 0 },
+      brandImpressions: { label: "Brand Impressions", value: 0, previousValue: 0 },
+      avgVisibility: { label: "Avg Visibility", value: 0, previousValue: 0 },
+    },
+    trends: [],
+    visibilityShare: [],
+    missedOpportunities: [],
+  })
 
-    const postImageCandidates = [
-      "/posts/post-template.png",
-      "/posts/post-template.png",
-      "/posts/post-template.png",
-      "/posts/post-template.png",
-    ]
+  // Chart config for the trends
+  const trendsConfig = useMemo(() => {
+     const config: ChartConfig = {
+        value: { label: "Exposures", color: "hsl(var(--chart-1))" }
+     }
+     availableBrands.forEach(b => {
+         config[b.slug] = { label: b.name, color: b.color }
+     })
+     return config
+  }, [availableBrands])
 
-    const captions = [
-      "Matchday vibes in Eindhoven. Ready for another big night.",
-      "New kit details looking sharp. What’s your favorite part?",
-      "Training done. Eyes on the weekend. Let’s go.",
-      "Highlights are up. Relive the best moments.",
-      "Behind the scenes from today’s session.",
-    ]
+  const [sortConfig, setSortConfig] = useState<{
+    by: "time" | "visibility" | "impressions" | "sentiment"
+    order: "asc" | "desc"
+  }>({ by: "time", order: "desc" })
 
-    const dateSpanMs = Math.max(1, end.getTime() - start.getTime())
-
-    const posts = Array.from({ length: 3 }).map((_, i) => {
-      const t = (i + 1) / 4
-      const jitter = (randCurrent() - 0.5) * 0.18
-      const ts = start.getTime() + dateSpanMs * Math.min(1, Math.max(0, t + jitter))
-      const date = new Date(ts)
-      const likes = Math.round(1200 + randCurrent() * 9800)
-      const comments = Math.round(60 + randCurrent() * 740)
-      const caption = captions[Math.floor(randCurrent() * captions.length)]
-      const imageSrc = postImageCandidates[(seedCurrent + i) % postImageCandidates.length]
-      return {
-        id: `post-${seedCurrent}-${i}`,
-        imageSrc,
-        date,
-        likes,
-        comments,
-        caption,
-      }
+  const activeBrandKeys = useMemo(() => {
+    const keys = new Set<string>();
+    postOverview.trends.forEach(d => {
+        Object.keys(d).forEach(k => {
+             // Only show if it has non-zero data at some point
+             if (k !== 'date' && typeof d[k] === 'number' && d[k] > 0) {
+                 keys.add(k)
+             }
+        })
     })
+    return Array.from(keys);
+  }, [postOverview.trends]);
 
-    const currentPosts = Math.max(3, Math.round(dateRangeDays * (0.65 + randCurrent() * 0.55)))
-    const previousPosts = Math.max(3, Math.round(dateRangeDays * (0.65 + randPrevious() * 0.55)))
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const prevEnd = new Date(start)
+        prevEnd.setDate(prevEnd.getDate() - 1)
 
-    const currentImpressions = Math.round(
-      currentPosts * (6500 + randCurrent() * 15500)
-    )
-    const previousImpressions = Math.round(
-      previousPosts * (6500 + randPrevious() * 15500)
-    )
+        const params = new URLSearchParams({
+          start: start.getTime().toString(),
+          end: end.getTime().toString(),
+          previousStart: previousStart.getTime().toString(),
+          previousEnd: prevEnd.getTime().toString(),
+          sortBy: sortConfig.by,
+          order: sortConfig.order,
+          brands: selectedBrands.join(","),
+        })
 
-    const visibleEngagement = posts.reduce((sum, p) => sum + p.likes + p.comments, 0)
-    const engagementScale = Math.max(1, currentPosts / 3)
-    const currentEngagement = Math.round(visibleEngagement * engagementScale)
+        const res = await fetch(`/api/new/commercial-hub/posts?${params}`)
+        if (!res.ok) throw new Error("Failed to fetch")
+        const data = await res.json()
 
-    let prevVisibleEngagement = 0
-    for (let i = 0; i < 3; i++) {
-      const likes = Math.round(1100 + randPrevious() * 9200)
-      const comments = Math.round(55 + randPrevious() * 700)
-      prevVisibleEngagement += likes + comments
-    }
-    const prevEngagementScale = Math.max(1, previousPosts / 3)
-    const previousEngagement = Math.round(prevVisibleEngagement * prevEngagementScale)
-
-    return {
-      posts,
-      metrics: {
-        posts: {
-          label: "Posts",
-          value: currentPosts,
-          previousValue: previousPosts,
-        },
-        impressions: {
-          label: "Impressions",
-          value: currentImpressions,
-          previousValue: previousImpressions,
-        },
-        engagement: {
-          label: "Engagement",
-          value: currentEngagement,
-          previousValue: previousEngagement,
-        },
-      },
-    }
-  }, [dateRangeDays, end, previousStart, start])
-
-  const brandOverview = useMemo(() => {
-    const scale = Math.max(0.25, dateRangeDays / 30)
-    const seedCurrent = Math.floor(start.getTime() / 86400000) + 4242
-    const seedPrevious = Math.floor(previousStart.getTime() / 86400000) + 4242
-    const randCurrent = mulberry32(seedCurrent)
-    const randPrevious = mulberry32(seedPrevious)
-
-    const exposures = Math.round((85000 + randCurrent() * 155000) * scale)
-    const exposuresPrev = Math.round((85000 + randPrevious() * 155000) * scale)
-
-    const impressions = Math.round(exposures * (1.9 + randCurrent() * 1.2))
-    const impressionsPrev = Math.round(exposuresPrev * (1.9 + randPrevious() * 1.2))
-
-    const visibility = 38 + randCurrent() * 34
-    const visibilityPrev = 38 + randPrevious() * 34
-
-    return {
-      exposures: {
-        value: exposures,
-        previousValue: exposuresPrev,
-      },
-      impressions: {
-        value: impressions,
-        previousValue: impressionsPrev,
-      },
-      visibility: {
-        value: visibility,
-        previousValue: visibilityPrev,
-      },
-    }
-  }, [dateRangeDays, previousStart, start])
-
-  const exposureTrends = useMemo(() => {
-    const startDay = new Date(start)
-    startDay.setHours(0, 0, 0, 0)
-    const endDay = new Date(end)
-    endDay.setHours(0, 0, 0, 0)
-
-    const scale = Math.max(0.35, dateRangeDays / 30)
-    const seedBase = Math.floor(startDay.getTime() / 86400000) + 9001
-
-    const baseRand = mulberry32(seedBase)
-    let puma = 3200 * scale + baseRand() * 2200 * scale
-    let brainport = 2600 * scale + baseRand() * 2100 * scale
-    let energie = 2100 * scale + baseRand() * 1900 * scale
-
-    const data: Array<{ label: string; puma: number; brainport: number; energie: number }> = []
-
-    let cursor = new Date(startDay)
-    let index = 0
-
-    while (cursor <= endDay) {
-      const rangeStart =
-        exposureGranularity === "weekly" ? startOfWeekLocal(cursor) : new Date(cursor)
-      const rangeEnd =
-        exposureGranularity === "weekly" ? endOfWeekLocal(cursor) : new Date(cursor)
-
-      if (rangeEnd < startDay) {
-        cursor = addDaysLocal(cursor, 1)
-        continue
+        setPostOverview({
+          posts: data.posts.map((p: any) => ({ ...p, date: new Date(p.date) })),
+          metrics: {
+            posts: {
+              label: "Posts",
+              value: data.metrics.posts,
+              previousValue: data.previousMetrics.posts,
+            },
+            impressions: {
+              label: "Impressions",
+              value: data.metrics.impressions,
+              previousValue: data.previousMetrics.impressions,
+            },
+            engagement: {
+              label: "Engagement",
+              value: data.metrics.engagement,
+              previousValue: data.previousMetrics.engagement,
+            },
+            brandExposures: {
+              label: "Brand Exposures",
+              value: data.metrics.brandExposures,
+              previousValue: data.previousMetrics.brandExposures,
+            },
+            brandImpressions: {
+              label: "Brand Impressions",
+              value: data.metrics.brandImpressions,
+              previousValue: data.previousMetrics.brandImpressions,
+            },
+            avgVisibility: {
+              label: "Avg Visibility",
+              value: data.metrics.avgVisibility,
+              previousValue: data.previousMetrics.avgVisibility,
+            },
+          },
+          trends: data.trends || [],
+          visibilityShare: data.visibilityShare || [],
+          missedOpportunities: data.missedOpportunities || [],
+        })
+      } catch (e) {
+        console.error("Failed to load post overview:", e)
       }
-
-      if (rangeStart > endDay) break
-
-      const visibleStart = rangeStart < startDay ? startDay : rangeStart
-      const visibleEnd = rangeEnd > endDay ? endDay : rangeEnd
-
-      const isoStart = visibleStart.toISOString().slice(0, 10)
-      const localSeed =
-        seedBase + isoStart.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
-      const rp = mulberry32(localSeed + 1)
-      const rb = mulberry32(localSeed + 2)
-      const re = mulberry32(localSeed + 3)
-
-      const t = index / (exposureGranularity === "weekly" ? 12 : 45)
-      const seasonal = Math.sin(t * Math.PI * 2)
-
-      puma = Math.max(0, puma + (rp() - 0.5) * 900 * scale + seasonal * 250 * scale)
-      brainport = Math.max(0, brainport + (rb() - 0.5) * 820 * scale + seasonal * 220 * scale)
-      energie = Math.max(0, energie + (re() - 0.5) * 760 * scale + seasonal * 200 * scale)
-
-      data.push({
-        label: formatAxisLabel(visibleStart),
-        puma: Math.round(puma),
-        brainport: Math.round(brainport),
-        energie: Math.round(energie),
-      })
-
-      index += 1
-      cursor = exposureGranularity === "weekly" ? addDaysLocal(visibleEnd, 1) : addDaysLocal(cursor, 1)
     }
 
-    const latest = data[data.length - 1]
-    return {
-      data,
-      latest,
-      config: {
-        puma: { label: "PUMA", color: "var(--chart-1)" },
-        brainport: { label: "Brainport", color: "var(--chart-2)" },
-        energie: { label: "EnergieDirect", color: "var(--chart-3)" },
-      } satisfies ChartConfig,
-    }
-  }, [dateRangeDays, end, exposureGranularity, start])
+    fetchData()
+  }, [start, end, previousStart, sortConfig, selectedBrands])
+
+
+
+
 
   const visibilityShare = useMemo(() => {
-    const seedBase =
-      start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 1717
-    const r = mulberry32(seedBase)
+    const total = postOverview.visibilityShare.reduce((sum, item) => sum + item.value, 0)
+    
+    // Extended color palette for brands
+    const palette = [
+      "#FF0000", "#6e0078", "#1fa12d", "#005baa", "#ffc107", 
+      "#ec008c", "#f39200", "#000000", "#555555", "#8B4513", 
+      "#20B2AA", "#778899", "#DA70D6", "#FF6347", "#4682B4"
+    ];
 
-    const rawA = 0.25 + r() * 0.45
-    const rawB = 0.15 + r() * 0.35
-    const rawC = 0.1 + r() * 0.25
-    const sum = rawA + rawB + rawC
-    const a = (rawA / sum) * 100
-    const b = (rawB / sum) * 100
-    const c = (rawC / sum) * 100
+    // Take all brands
+    const data = postOverview.visibilityShare.map((item, index) => {
+        const key = item.brand.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        // Find matching config or generate color
+        let color = palette[index % palette.length];
+        let label = item.brand;
+        
+        // Prefer config color and label if available
+        const configKey = Object.keys(trendsConfig).find(k => k === key) as keyof typeof trendsConfig;
+        if (configKey && trendsConfig[configKey]) {
+            color = trendsConfig[configKey].color;
+            label = trendsConfig[configKey].label || label;
+        }
 
-    const data = [
-      { key: "puma", name: "PUMA", value: a, color: "var(--chart-1)" },
-      { key: "brainport", name: "Brainport", value: b, color: "var(--chart-2)" },
-      { key: "energie", name: "EnergieDirect", value: c, color: "var(--chart-3)" },
-    ] as const
+        return {
+            key,
+            name: label,
+            value: total > 0 ? (item.value / total) * 100 : 0,
+            color
+        }
+    });
 
-    const config = {
-      puma: { label: "PUMA", color: "var(--chart-1)" },
-      brainport: { label: "Brainport", color: "var(--chart-2)" },
-      energie: { label: "EnergieDirect", color: "var(--chart-3)" },
-    } satisfies ChartConfig
+    const config: ChartConfig = {};
+    data.forEach(d => {
+        config[d.key] = { label: d.name, color: d.color };
+    });
 
     return { data, config }
-  }, [start])
+  }, [postOverview.visibilityShare])
 
-  const missedOpportunities = useMemo(() => {
-    const seedBase =
-      start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 2323
-    const r = mulberry32(seedBase)
+  const missedOpportunities = postOverview.missedOpportunities
 
-    return Array.from({ length: 3 }).map((_, i) => {
-      const impressions = Math.round(140000 + r() * 860000)
-      const visibilityPct = 8 + r() * 24
-      return {
-        id: `missed-${seedBase}-${i}`,
-        impressions,
-        visibilityPct,
-      }
-    })
-  }, [start])
+  const mainRef = useRef<HTMLElement>(null)
+
+  const handleExport = async () => {
+    if (!mainRef.current) return
+    try {
+        const html2canvas = (await import("html2canvas")).default
+        const jsPDF = (await import("jspdf")).default
+        
+        const canvas = await html2canvas(mainRef.current, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+        })
+        
+        const imgData = canvas.toDataURL("image/png")
+        const pdf = new jsPDF({
+            orientation: "landscape",
+            unit: "px",
+            format: [canvas.width, canvas.height]
+        })
+        
+        pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height)
+        pdf.save("commercial-hub.pdf")
+    } catch (err) {
+        console.error("Export failed", err)
+    }
+  }
 
   return (
-    <main className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
+    <main ref={mainRef} className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
           <input
@@ -417,10 +435,31 @@ export default function CommercialHubPage() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
             <div className="inline-flex items-stretch">
-              <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
-                <CalendarIcon className="h-4 w-4" />
-                {dateRangeLabel}
-              </div>
+            {dateRangeKey === "custom" ? (
+                <div className="border-input bg-background flex h-9 items-center gap-2 rounded-l-md border border-r-0 px-2">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    max={customEnd}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                  <span className="text-muted-foreground">-</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    min={customStart}
+                    max={toIsoDateOnly(defaultEnd)}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                </div>
+              ) : (
+                <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+                  <CalendarIcon className="h-4 w-4" />
+                  {dateRangeLabel}
+                </div>
+              )}
               <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
                 <SelectTrigger className="h-9 rounded-l-none border-l-0">
                   <SelectValue />
@@ -430,6 +469,8 @@ export default function CommercialHubPage() {
                   <SelectItem value="30">Last 30 days</SelectItem>
                   <SelectItem value="90">Last 90 days</SelectItem>
                   <SelectItem value="365">Last 365 days</SelectItem>
+                  <Separator className="my-1" />
+                  <SelectItem value="custom">Custom Range</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -452,13 +493,55 @@ export default function CommercialHubPage() {
                 role="menu"
                 className="bg-popover text-popover-foreground absolute right-0 top-full z-50 mt-2 w-56 rounded-md border p-2 text-sm shadow-md"
               >
-                <div className="px-2 py-1.5 text-muted-foreground">No filters yet</div>
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="flex items-center gap-2 px-2 py-1.5 border-b hover:bg-accent rounded-sm cursor-pointer" 
+                    onClick={() => {
+                        if (selectedBrands.length === availableBrands.length) {
+                             setSelectedBrands([]) 
+                        } else {
+                             setSelectedBrands(availableBrands.map(b => b.slug))
+                        }
+                    }}
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={availableBrands.length > 0 && selectedBrands.length === availableBrands.length}
+                      readOnly
+                      className="cursor-pointer"
+                    />
+                    <span className="font-medium">Select All</span>
+                  </div>
+                  {availableBrands.map((brand) => (
+                    <div 
+                        key={brand.slug} 
+                        className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer"
+                        onClick={() => {
+                            if (selectedBrands.includes(brand.slug)) {
+                                setSelectedBrands(selectedBrands.filter(k => k !== brand.slug))
+                            } else {
+                                setSelectedBrands([...selectedBrands, brand.slug])
+                            }
+                        }}
+                    >
+                      <input 
+                        type="checkbox" 
+                        checked={selectedBrands.includes(brand.slug)}
+                        readOnly
+                        className="cursor-pointer"
+                      />
+                      <span>{brand.name}</span>
+                    </div>
+                  ))}
+
+                </div>
               </div>
             ) : null}
           </div>
 
           <button
             type="button"
+            onClick={handleExport}
             className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
           >
             <Download className="h-4 w-4" />
@@ -490,46 +573,55 @@ export default function CommercialHubPage() {
             <div className="relative z-0 flex w-full flex-col gap-3 py-4">
               <div className="w-full overflow-hidden">
                 <div className="psv-logo-marquee psv-logo-marquee--a flex w-max items-center gap-10 will-change-transform">
-                  {[...sponsorLogos, ...sponsorLogos].map((logo, index) => (
+                  {[...availableBrands, ...availableBrands].map((brand, index) => {
+                    const logoSrc = brand.logo_dark || brand.logo_light || ""
+                    if (!logoSrc) return null
+                    return (
                     <Image
-                      key={`row-a-${logo.src}-${index}`}
-                      src={logo.src}
-                      alt={logo.alt}
+                      key={`row-a-${brand.slug}-${index}`}
+                      src={logoSrc}
+                      alt={brand.name}
                       width={140}
                       height={40}
                       className="h-8 w-auto opacity-80 grayscale brightness-200"
                     />
-                  ))}
+                  )})}
                 </div>
               </div>
 
               <div className="w-full overflow-hidden">
                 <div className="psv-logo-marquee psv-logo-marquee--b flex w-max items-center gap-10 will-change-transform">
-                  {[...sponsorLogosRowB, ...sponsorLogosRowB].map((logo, index) => (
+                  {[...availableBrands, ...availableBrands].map((brand, index) => {
+                    const logoSrc = brand.logo_dark || brand.logo_light || ""
+                    if (!logoSrc) return null
+                    return (
                     <Image
-                      key={`row-b-${logo.src}-${index}`}
-                      src={logo.src}
-                      alt={logo.alt}
+                      key={`row-b-${brand.slug}-${index}`}
+                      src={logoSrc}
+                      alt={brand.name}
                       width={140}
                       height={40}
                       className="h-8 w-auto opacity-70 grayscale brightness-200"
                     />
-                  ))}
+                  )})}
                 </div>
               </div>
 
               <div className="hidden w-full overflow-hidden md:block">
                 <div className="psv-logo-marquee psv-logo-marquee--c flex w-max items-center gap-10 will-change-transform">
-                  {[...sponsorLogosRowC, ...sponsorLogosRowC].map((logo, index) => (
+                  {[...availableBrands, ...availableBrands].map((brand, index) => {
+                    const logoSrc = brand.logo_dark || brand.logo_light || ""
+                    if (!logoSrc) return null
+                    return (
                     <Image
-                      key={`row-c-${logo.src}-${index}`}
-                      src={logo.src}
-                      alt={logo.alt}
+                      key={`row-c-${brand.slug}-${index}`}
+                      src={logoSrc}
+                      alt={brand.name}
                       width={140}
                       height={40}
                       className="h-8 w-auto opacity-60 grayscale brightness-200"
                     />
-                  ))}
+                  )})}
                 </div>
               </div>
             </div>
@@ -553,13 +645,37 @@ export default function CommercialHubPage() {
             <span>POST OVERVIEW</span>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-            >
-              <ArrowUpDown className="h-4 w-4" />
-              <span>Sort</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <Select
+                value={sortConfig.by}
+                onValueChange={(val: any) =>
+                  setSortConfig((prev) => ({ ...prev, by: val }))
+                }
+              >
+                <SelectTrigger className="h-8 w-[130px] text-xs">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="time">Recent</SelectItem>
+                  <SelectItem value="visibility">Visibility Score</SelectItem>
+                  <SelectItem value="impressions">Impressions</SelectItem>
+                  <SelectItem value="sentiment">Sentiment</SelectItem>
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-foreground hover:bg-accent"
+                onClick={() =>
+                  setSortConfig((prev) => ({
+                    ...prev,
+                    order: prev.order === "asc" ? "desc" : "asc",
+                  }))
+                }
+                title={sortConfig.order === "asc" ? "Ascending" : "Descending"}
+              >
+                <ArrowUpDown className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
         </div>
@@ -568,7 +684,14 @@ export default function CommercialHubPage() {
           <div className="grid h-full min-h-0 grid-cols-1 gap-6 md:grid-cols-[2fr_1px_1fr]">
 
               <div className="grid h-full min-h-0 auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-3">
-                {postOverview.posts.map((post) => (
+                {postOverview.posts.length === 0 ? (
+                    <div className="col-span-3 flex h-full flex-col items-center justify-center text-center text-muted-foreground p-8 border border-dashed border-border rounded-lg bg-muted/20">
+                        <FileText className="h-10 w-10 opacity-30 mb-2" />
+                        <span className="text-sm font-medium">No posts found</span>
+                        <span className="text-xs">Try adjusting your filters or date range</span>
+                    </div>
+                ) : (
+                  postOverview.posts.map((post) => (
                   <div
                     key={post.id}
                     className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
@@ -581,6 +704,16 @@ export default function CommercialHubPage() {
                         sizes="(min-width: 1024px) 260px, (min-width: 640px) 33vw, 100vw"
                         className="object-cover"
                       />
+                      {sortConfig.by !== "time" && (
+                        <div className="absolute top-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm tracking-tight tabular-nums">
+                          {sortConfig.by === "visibility" &&
+                            `Vis: ${post.visibilityScore !== null ? post.visibilityScore.toFixed(2) : "N/A"}${post.visibilityBrand ? ` (${post.visibilityBrand})` : ""}`}
+                          {sortConfig.by === "impressions" &&
+                            `Imp: ${formatCompactNumber(post.impressions)}`}
+                          {sortConfig.by === "sentiment" &&
+                            `Sent: ${post.sentimentScore !== null ? post.sentimentScore.toFixed(1) + "%" : "0%"}`}
+                        </div>
+                      )}
                     </div>
 
                     <div className="shrink-0 h-20 border-t border-border bg-muted px-3 py-3 flex flex-col">
@@ -602,14 +735,14 @@ export default function CommercialHubPage() {
                       </div>
 
                       <div
-                        className="mt-2 text-xs leading-relaxed text-foreground/90 overflow-hidden flex-1"
+                        className="mt-2 text-xs leading-relaxed text-foreground/90 overflow-auto flex-1"
                         style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
                       >
                         <span className="break-words">{post.caption}</span>
                       </div>
                     </div>
                   </div>
-                ))}
+                )))}
               </div>
 
 
@@ -676,24 +809,24 @@ export default function CommercialHubPage() {
         {([
           {
             title: "BRAND EXPOSURES",
-            value: brandOverview.exposures.value,
-            previousValue: brandOverview.exposures.previousValue,
-            valueDisplay: brandOverview.exposures.value.toLocaleString(),
-            previousValueDisplay: brandOverview.exposures.previousValue.toLocaleString(),
+            value: postOverview.metrics.brandExposures.value,
+            previousValue: postOverview.metrics.brandExposures.previousValue,
+            valueDisplay: postOverview.metrics.brandExposures.value.toLocaleString(),
+            previousValueDisplay: postOverview.metrics.brandExposures.previousValue.toLocaleString(),
           },
           {
             title: "BRAND IMPRESSIONS",
-            value: brandOverview.impressions.value,
-            previousValue: brandOverview.impressions.previousValue,
-            valueDisplay: formatCompactNumber(brandOverview.impressions.value),
-            previousValueDisplay: formatCompactNumber(brandOverview.impressions.previousValue),
+            value: postOverview.metrics.brandImpressions.value,
+            previousValue: postOverview.metrics.brandImpressions.previousValue,
+            valueDisplay: formatCompactNumber(postOverview.metrics.brandImpressions.value),
+            previousValueDisplay: formatCompactNumber(postOverview.metrics.brandImpressions.previousValue),
           },
           {
             title: "AVERAGE VISIBILITY",
-            value: brandOverview.visibility.value,
-            previousValue: brandOverview.visibility.previousValue,
-            valueDisplay: `${brandOverview.visibility.value.toFixed(1)}%`,
-            previousValueDisplay: `${brandOverview.visibility.previousValue.toFixed(1)}%`,
+            value: postOverview.metrics.avgVisibility.value,
+            previousValue: postOverview.metrics.avgVisibility.previousValue,
+            valueDisplay: `${postOverview.metrics.avgVisibility.value.toFixed(1)}%`,
+            previousValueDisplay: `${postOverview.metrics.avgVisibility.previousValue.toFixed(1)}%`,
           },
         ] as const).map((card) => {
           const deltaPct = percentChange(card.value, card.previousValue)
@@ -748,33 +881,6 @@ export default function CommercialHubPage() {
             <span>EXPOSURE TRENDS</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="inline-flex items-center rounded-md border border-border bg-background p-1 text-sm">
-              <button
-                type="button"
-                onClick={() => setExposureGranularity("daily")}
-                className={cn(
-                  "inline-flex h-7 items-center rounded-sm px-3",
-                  exposureGranularity === "daily"
-                    ? "bg-black text-white"
-                    : "text-muted-foreground hover:bg-accent"
-                )}
-              >
-                Daily
-              </button>
-              <button
-                type="button"
-                onClick={() => setExposureGranularity("weekly")}
-                className={cn(
-                  "inline-flex h-7 items-center rounded-sm px-3",
-                  exposureGranularity === "weekly"
-                    ? "bg-black text-white"
-                    : "text-muted-foreground hover:bg-accent"
-                )}
-              >
-                Weekly
-              </button>
-            </div>
-
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
         </div>
@@ -782,10 +888,10 @@ export default function CommercialHubPage() {
         <div className="px-6 pb-6">
           <div className="min-w-0">
               <ChartContainer
-                config={exposureTrends.config}
+                config={trendsConfig}
                 className="h-72 w-full"
               >
-                <LineChart data={exposureTrends.data} margin={{ top: 14, right: 18, left: 10, bottom: 0 }}>
+                <LineChart data={postOverview.trends} margin={{ top: 14, right: 18, left: 10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <ChartTooltip
                     cursor={{ stroke: "#c7c7c7", strokeDasharray: "4 4" }}
@@ -799,90 +905,81 @@ export default function CommercialHubPage() {
                         <div className="rounded-lg border border-black bg-black px-3 py-2 shadow-md space-y-2 text-white">
                           <div className="font-semibold text-sm text-white">{String(label ?? "")}</div>
                           <div className="space-y-1 text-xs text-zinc-100">
-                            {visible.map((item) => {
-                              const stroke =
-                                (typeof item.stroke === "string" && item.stroke) ||
-                                (typeof item.color === "string" && item.color) ||
-                                "#ffffff"
-                              const name = String(item.name ?? item.dataKey ?? "")
-                              const value =
-                                typeof item.value === "number" ? item.value : Number(item.value)
-
-                              return (
-                                <div
-                                  key={String(item.dataKey ?? name)}
-                                  className="flex items-center justify-between gap-4"
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span
-                                      className="h-[10px] w-[10px] rounded-[2px] shrink-0"
-                                      style={{ backgroundColor: stroke }}
-                                      aria-hidden="true"
-                                    />
-                                    <span className="truncate text-zinc-200">{name}</span>
-                                  </div>
-                                  <span className="text-white font-mono font-medium tabular-nums">
-                                    {Number.isFinite(value) ? value.toLocaleString() : "-"}
-                                  </span>
-                                </div>
-                              )
-                            })}
+                             {visible.map((item) => {
+                               // Map internal keys to known labels if possible
+                               const key = String(item.dataKey) as keyof typeof trendsConfig;
+                               const config = trendsConfig[key] || { label: String(item.name || item.dataKey), color: item.stroke };
+                               
+                               return (
+                                 <div key={key} className="flex items-center justify-between gap-4">
+                                   <div className="flex items-center gap-2 min-w-0">
+                                     <span
+                                       className="h-[10px] w-[10px] rounded-[2px] shrink-0"
+                                       style={{ backgroundColor: config.color }}
+                                       aria-hidden="true"
+                                     />
+                                     <span className="truncate text-zinc-200">{config.label}</span>
+                                   </div>
+                                   <span className="text-white font-mono font-medium tabular-nums">
+                                     {Number(item.value).toLocaleString()}
+                                   </span>
+                                 </div>
+                               )
+                             })}
                           </div>
                         </div>
                       )
                     }}
                   />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={18} />
+                  <XAxis 
+                    dataKey="date" 
+                    tickLine={false} 
+                    axisLine={false} 
+                    minTickGap={18}
+                    tickFormatter={(value) => {
+                       const d = new Date(value);
+                       return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                    }}
+                  />
                   <YAxis
                     width={44}
                     tickLine={false}
                     axisLine={false}
                     tickFormatter={(v) => formatCompactNumber(Number(v))}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="puma"
-                    stroke="var(--color-puma)"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="brainport"
-                    stroke="var(--color-brainport)"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="energie"
-                    stroke="var(--color-energie)"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
+                  {activeBrandKeys.map(key => {
+                      const config = trendsConfig[key];
+                      if (!config) return null;
+                      return (
+                          <Line 
+                            key={key}
+                            type="monotone" 
+                            dataKey={key} 
+                            stroke={config.color} 
+                            strokeWidth={2} 
+                            dot={false} 
+                            isAnimationActive={false} 
+                          />
+                      )
+                  })}
                 </LineChart>
               </ChartContainer>
           </div>
-
+          
+          {/* Legend */}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
-            {([
-              { key: "puma", label: "PUMA", color: "var(--chart-1)" },
-              { key: "brainport", label: "Brainport", color: "var(--chart-2)" },
-              { key: "energie", label: "EnergieDirect", color: "var(--chart-3)" },
-            ] as const).map((item) => (
-              <div key={item.key} className="flex items-center gap-2">
-                <span
-                  className="h-[10px] w-[10px] rounded-[2px]"
-                  style={{ backgroundColor: item.color }}
-                  aria-hidden="true"
-                />
-                <span>{item.label}</span>
-              </div>
-            ))}
+            {activeBrandKeys.map((key) => {
+               const config = trendsConfig[key]
+               if (!config) return null
+               return (
+               <div key={key} className="flex items-center gap-2">
+                 <div className="h-3 w-3 rounded-full" style={{ backgroundColor: config.color }}></div>
+                 <span>{config.label}</span>
+               </div>
+               )
+            })}
           </div>
+
         </div>
       </section>
 
@@ -963,7 +1060,7 @@ export default function CommercialHubPage() {
                 <div key={item.id} className="flex h-full flex-col overflow-hidden">
                   <div className="relative flex-1 min-h-0 w-full">
                     <Image
-                      src="/posts/post-template.png"
+                      src={item.imageSrc || "/posts/post-template.png"}
                       alt="Missed opportunity post"
                       fill
                       sizes="(min-width: 768px) 220px, 33vw"

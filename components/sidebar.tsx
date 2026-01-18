@@ -15,6 +15,7 @@ import {
   Code,
   Handshake,
   Home,
+  Scan,
   Settings,
   Users,
 } from "lucide-react"
@@ -95,6 +96,12 @@ export default function Sidebar() {
           { label: "Events", href: "/events", icon: Calendar },
           { label: "Sponsors", href: "/sponsors-report", icon: Handshake },
           { label: "Players", href: "/players", icon: Users },
+        ],
+      },
+      {
+        title: "TOOLS",
+        items: [
+          { label: "Logo Editor", href: "/logo-editor", icon: Scan },
         ],
       },
     ],

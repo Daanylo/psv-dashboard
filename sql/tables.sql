@@ -12,11 +12,14 @@ CREATE TABLE `instagram_comments` (
   `replies` int DEFAULT NULL,
   `sentiment` varchar(20) DEFAULT NULL,
   `player_mentioned` text,
+  `topic_label` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `comment_id` (`comment_id`),
   KEY `idx_post_id` (`post_id`),
+  KEY `idx_topic_label` (`topic_label`),
   CONSTRAINT `fk_post_id` FOREIGN KEY (`post_id`) REFERENCES `instagram_posts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=48265 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 
 CREATE TABLE `instagram_posts` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -239,3 +242,46 @@ CREATE TABLE `players` (
 
 CREATE ALGORITHM=UNDEFINED DEFINER=`remote`@`%` SQL SECURITY DEFINER VIEW `instagram_post_sentiment` AS select `ic`.`post_id` AS `post_id`,coalesce(avg((case when (lower(`ic`.`sentiment`) = 'positive') then 1 when (lower(`ic`.`sentiment`) = 'negative') then -(1) else 0 end)),0) AS `sentiment_score`,count(0) AS `comment_count` from `instagram_comments` `ic` group by `ic`.`post_id`;
 
+CREATE TABLE `logo_detections` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `post_id` int NOT NULL,
+  `brand_id` int DEFAULT NULL,
+  `logo_label` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `confidence` decimal(5,4) NOT NULL,
+  `box_x` decimal(10,2) NOT NULL,
+  `box_y` decimal(10,2) NOT NULL,
+  `box_width` decimal(10,2) NOT NULL,
+  `box_height` decimal(10,2) NOT NULL,
+  `model_version` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'best.onnx',
+  `confidence_threshold` decimal(3,2) NOT NULL,
+  `detected_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `verified` tinyint(1) DEFAULT '0',
+  `verified_by` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `verified_at` timestamp NULL DEFAULT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `visibility_score` decimal(10,4) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_post_id` (`post_id`),
+  KEY `idx_logo_label` (`logo_label`),
+  KEY `idx_confidence` (`confidence`),
+  KEY `idx_detected_at` (`detected_at`),
+  KEY `idx_verified` (`verified`),
+  CONSTRAINT `fk_logo_detections_post_id` FOREIGN KEY (`post_id`) REFERENCES `instagram_posts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=27203 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE `brands` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `slug` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `color` varchar(7) COLLATE utf8mb4_unicode_ci DEFAULT '#000000',
+  `logo_dark_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `logo_light_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `match_keywords` text COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  UNIQUE KEY `slug` (`slug`),
+  KEY `idx_slug` (`slug`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

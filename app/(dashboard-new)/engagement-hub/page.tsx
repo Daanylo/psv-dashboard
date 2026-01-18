@@ -47,7 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-type DateRangeKey = "7" | "30" | "90" | "365"
+type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 type JourneyGranularity = "daily" | "weekly"
 
 type SentimentJourneyPoint = {
@@ -90,10 +90,36 @@ function formatDeltaPct(value: number) {
   return `${value >= 0 ? "+" : "-"}${rounded}%`
 }
 
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
 function toIsoDateOnly(date: Date) {
   const d = new Date(date)
   d.setHours(0, 0, 0, 0)
-  return d.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLocalIsoDate(value: string) {
+  const [y, m, d] = value.split("-").map(Number)
+  return new Date(y, m - 1, d)
+}
+
+function getDateRange(days: number, endDate: Date) {
+  const end = new Date(endDate)
+  end.setHours(0, 0, 0, 0)
+
+  const start = new Date(end)
+  start.setDate(start.getDate() - (days - 1))
+
+  return { start, end }
 }
 
 function legendLabel(name: string) {
@@ -335,6 +361,8 @@ const engagementMarqueeRowC = [
 export default function EngagementHubPage() {
   const [search, setSearch] = useState("")
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
+  const [customStart, setCustomStart] = useState<Date | undefined>()
+  const [customEnd, setCustomEnd] = useState<Date | undefined>()
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
 
@@ -376,38 +404,34 @@ export default function EngagementHubPage() {
     }
   }, [])
 
-  const dateRangeDays = useMemo(() => {
-    switch (dateRangeKey) {
-      case "7":
-        return 7
-      case "30":
-        return 30
-      case "90":
-        return 90
-      case "365":
-        return 365
-    }
-  }, [dateRangeKey])
-
   const { start, end } = useMemo(() => {
-    const endDate = new Date()
-    endDate.setHours(0, 0, 0, 0)
-    const startDate = new Date(endDate)
-    startDate.setDate(startDate.getDate() - (dateRangeDays - 1))
-    return { start: startDate, end: endDate }
-  }, [dateRangeDays])
+    if (dateRangeKey === "custom") {
+      const e = customEnd || new Date()
+      const s = customStart || new Date(new Date().setDate(new Date().getDate() - 30))
+      e.setHours(23, 59, 59, 999)
+      s.setHours(0, 0, 0, 0)
+      return { start: s, end: e }
+    }
+    const map: Record<string, number> = {
+      "7": 7,
+      "30": 30,
+      "90": 90,
+      "365": 365,
+    }
+    return getDateRange(map[dateRangeKey] || 30, new Date())
+  }, [dateRangeKey, customStart, customEnd])
+
+  const dateRangeLabel = useMemo(() => `${formatShortDate(start)} - ${formatShortDate(end)}`, [start, end])
 
   const periodLabel = useMemo(() => {
-    switch (dateRangeKey) {
-      case "7":
-        return "Last 7 days"
-      case "30":
-        return "Last 30 days"
-      case "90":
-        return "Last 90 days"
-      case "365":
-        return "Last 365 days"
+    if (dateRangeKey === "custom") return "Custom Range"
+    const labels: Record<string, string> = {
+      "7": "Last 7 days",
+      "30": "Last 30 days",
+      "90": "Last 90 days",
+      "365": "Last 365 days",
     }
+    return labels[dateRangeKey] || "Select period"
   }, [dateRangeKey])
 
   const sentimentJourneyData = useMemo(() => {
@@ -506,20 +530,60 @@ export default function EngagementHubPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="inline-flex items-stretch">
-            <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+          {dateRangeKey === "custom" && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">From</span>
+                <input
+                  type="date"
+                  value={customStart ? toIsoDateOnly(customStart) : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) {
+                      setCustomStart(undefined)
+                      return
+                    }
+                    setCustomStart(parseLocalIsoDate(e.target.value))
+                  }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">To</span>
+                <input
+                  type="date"
+                  value={customEnd ? toIsoDateOnly(customEnd) : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) {
+                      setCustomEnd(undefined)
+                      return
+                    }
+                    setCustomEnd(parseLocalIsoDate(e.target.value))
+                  }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <Separator orientation="vertical" className="h-6" />
+            </>
+          )}
+
+          <div className="inline-flex items-stretch shadow-sm">
+            <div
+              className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm text-muted-foreground"
+              aria-hidden="true"
+            >
               <CalendarIcon className="h-4 w-4" />
-              {periodLabel}
+              <span>{dateRangeLabel}</span>
             </div>
             <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
-              <SelectTrigger className="h-9 rounded-l-none border-l-0">
-                <SelectValue />
+              <SelectTrigger className="h-9 min-w-[140px] rounded-l-none border-l-0 bg-background font-medium hover:bg-accent hover:text-accent-foreground focus:ring-0">
+                <SelectValue>{periodLabel}</SelectValue>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent align="end">
                 <SelectItem value="7">Last 7 days</SelectItem>
                 <SelectItem value="30">Last 30 days</SelectItem>
                 <SelectItem value="90">Last 90 days</SelectItem>
-                <SelectItem value="365">Last 365 days</SelectItem>
+                <SelectItem value="365">Last year</SelectItem>
+                <SelectItem value="custom">Custom Range</SelectItem>
               </SelectContent>
             </Select>
           </div>

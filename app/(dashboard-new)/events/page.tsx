@@ -5,8 +5,9 @@ import Link from "next/link"
 import { useMemo, useState } from "react"
 import { ArrowRight, Calendar as CalendarIcon, Download, Filter } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 
-type DateRangeKey = "7" | "30" | "90" | "365"
+type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
@@ -14,6 +15,20 @@ function formatShortDate(date: Date) {
     day: "numeric",
     year: "numeric",
   })
+}
+
+function toIsoDateOnly(date: Date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLocalIsoDate(value: string) {
+  const [y, m, d] = value.split("-").map(Number)
+  return new Date(y, m - 1, d)
 }
 
 function getDateRange(days: number, endDate: Date) {
@@ -36,34 +51,37 @@ export default function EventsPage() {
   const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
+  const [customStart, setCustomStart] = useState<Date | undefined>()
+  const [customEnd, setCustomEnd] = useState<Date | undefined>()
 
-  const dateRangeDays = useMemo(() => {
-    switch (dateRangeKey) {
-      case "7":
-        return 7
-      case "30":
-        return 30
-      case "90":
-        return 90
-      case "365":
-        return 365
+  const { start, end } = useMemo(() => {
+    if (dateRangeKey === "custom") {
+      const e = customEnd || new Date()
+      const s = customStart || new Date(new Date().setDate(new Date().getDate() - 30))
+      e.setHours(23, 59, 59, 999)
+      s.setHours(0, 0, 0, 0)
+      return { start: s, end: e }
     }
-  }, [dateRangeKey])
+    const map: Record<string, number> = {
+      "7": 7,
+      "30": 30,
+      "90": 90,
+      "365": 365,
+    }
+    return getDateRange(map[dateRangeKey] || 30, new Date())
+  }, [dateRangeKey, customStart, customEnd])
 
-  const { start, end } = useMemo(() => getDateRange(dateRangeDays, new Date()), [dateRangeDays])
   const dateRangeLabel = useMemo(() => `${formatShortDate(start)} - ${formatShortDate(end)}`, [start, end])
 
   const periodLabel = useMemo(() => {
-    switch (dateRangeKey) {
-      case "7":
-        return "Last 7 days"
-      case "30":
-        return "Last 30 days"
-      case "90":
-        return "Last 90 days"
-      case "365":
-        return "Last 365 days"
+    if (dateRangeKey === "custom") return "Custom Range"
+    const labels: Record<string, string> = {
+      "7": "Last 7 days",
+      "30": "Last 30 days",
+      "90": "Last 90 days",
+      "365": "Last 365 days",
     }
+    return labels[dateRangeKey] || "Select period"
   }, [dateRangeKey])
 
   const recentEventDateLabel = useMemo(() => formatShortDate(end), [end])
@@ -84,6 +102,42 @@ export default function EventsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {dateRangeKey === "custom" && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">From</span>
+                <input
+                  type="date"
+                  value={customStart ? toIsoDateOnly(customStart) : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) {
+                      setCustomStart(undefined)
+                      return
+                    }
+                    setCustomStart(parseLocalIsoDate(e.target.value))
+                  }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">To</span>
+                <input
+                  type="date"
+                  value={customEnd ? toIsoDateOnly(customEnd) : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) {
+                      setCustomEnd(undefined)
+                      return
+                    }
+                    setCustomEnd(parseLocalIsoDate(e.target.value))
+                  }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <Separator orientation="vertical" className="h-6" />
+            </>
+          )}
+
           <div className="flex items-center gap-2">
             <div className="inline-flex items-stretch">
               <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
@@ -92,13 +146,14 @@ export default function EventsPage() {
               </div>
               <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
                 <SelectTrigger className="h-9 rounded-l-none border-l-0">
-                  <SelectValue />
+                  <SelectValue>{periodLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="7">Last 7 days</SelectItem>
                   <SelectItem value="30">Last 30 days</SelectItem>
                   <SelectItem value="90">Last 90 days</SelectItem>
                   <SelectItem value="365">Last 365 days</SelectItem>
+                  <SelectItem value="custom">Custom Range</SelectItem>
                 </SelectContent>
               </Select>
             </div>

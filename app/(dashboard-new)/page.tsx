@@ -14,6 +14,7 @@ import {
   LineChart as LineChartIcon,
   MessageSquareText,
   Smile,
+  Sparkles,
   Star,
   ThumbsDown,
   ThumbsUp,
@@ -39,7 +40,7 @@ import {
 } from "recharts"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 
-type DateRangeKey = "7" | "30" | "90" | "365"
+type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 type JourneyGranularity = "daily" | "weekly"
 
 type SentimentJourneyPoint = {
@@ -77,6 +78,30 @@ type PlayerMentionsStats = {
   negativePct: number
 }
 
+type HotTopic = {
+  rank: number
+  topic: string
+  mentions: number
+}
+
+type TopExposure = {
+  brand: string
+  appearances: number
+  postUrl: string
+  visibilityScore: number
+  avgVisibility: number
+}
+
+type PlayerReportItem = {
+  name: string
+  shirtNumber: number | null
+  position: string | null
+  mentions: number
+  positivePct: number
+  avgRating: number | null
+  marketValue: number | null
+}
+
 type OverviewSummaryResponse = {
   meta: {
     start: string
@@ -93,7 +118,11 @@ type OverviewSummaryResponse = {
   playerMentions: {
     mostPopular: PlayerMentionsStats | null
     mostControversial: PlayerMentionsStats | null
+    fullReport: PlayerReportItem[]
   }
+  hotTopics: HotTopic[]
+  topExposures: TopExposure[]
+  aiSummary: string | null
 }
 
 const sentimentJourneyChartConfig: ChartConfig = {
@@ -116,7 +145,15 @@ function formatDeltaPct(value: number) {
 function toIsoDateOnly(date: Date) {
   const d = new Date(date)
   d.setHours(0, 0, 0, 0)
-  return d.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLocalIsoDate(value: string) {
+  const [y, m, d] = value.split("-").map(Number)
+  return new Date(y, m - 1, d)
 }
 
 function addDaysLocal(date: Date, days: number) {
@@ -136,6 +173,18 @@ function mulberry32(seed: number) {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
+}
+
+function getSponsorLogo(brand: string) {
+  const b = brand.toLowerCase().trim()
+  if (b.includes("puma")) return "/sponsor-logos/puma-logo.svg"
+  if (b.includes("brainport")) return "/sponsor-logos/brainport.png"
+  if (b.includes("energie")) return "/sponsor-logos/energiedirect.png"
+  if (b.includes("goodhabitz")) return "/sponsor-logos/goodhabitz-logo-png.png"
+  if (b.includes("50plus") || b.includes("thumb")) return "/sponsor-logos/50plus-logo.svg"
+  if (b.includes("psv")) return "/sponsor-logos/psv-logo.svg"
+  if (b.includes("simac")) return "/sponsor-logos/simac-logo-rgb-transp.gif"
+  return null
 }
 
 function labelForDate(date: Date) {
@@ -380,10 +429,53 @@ function getRatingBadgeClass(rating: number) {
   return "bg-green-500"
 }
 
+function formatMarketValue(value: number | null) {
+  if (value === null) return "—"
+  if (value >= 1_000_000) {
+    return `€${(value / 1_000_000).toFixed(1)}M`
+  }
+  if (value >= 1_000) {
+    return `€${(value / 1_000).toFixed(1)}K`
+  }
+  return `€${value}`
+}
+
+function PlayerImage({ shirtNumber, name }: { shirtNumber: number | null; name: string }) {
+  const initialSrc = shirtNumber ? `/player_images/${shirtNumber}.png` : "/player_images/no_image.png"
+  const [src, setSrc] = useState(initialSrc)
+
+  useEffect(() => {
+    setSrc(initialSrc)
+  }, [initialSrc])
+
+  return (
+    <Image
+      src={src}
+      alt={name}
+      width={96}
+      height={192}
+      className="h-6 w-auto object-contain object-bottom"
+      onError={() => setSrc("/player_images/no_image.png")}
+    />
+  )
+}
+
 export default function HomePage() {
   const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
+  
+  // Custom date range state (defaults to last 30 days)
+  const defaultEnd = useMemo(() => new Date(), [])
+  const defaultStart = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    return d
+  }, [])
+  
+  const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
+  const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
+
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
   const [journeyNormalize, setJourneyNormalize] = useState(false)
 
@@ -401,10 +493,21 @@ export default function HomePage() {
         return 90
       case "365":
         return 365
+      default:
+        return 30
     }
   }, [dateRangeKey])
 
-  const { start, end } = useMemo(() => getDateRange(dateRangeDays, new Date()), [dateRangeDays])
+  const { start, end } = useMemo(() => {
+    if (dateRangeKey === "custom") {
+      return {
+        start: parseLocalIsoDate(customStart),
+        end: parseLocalIsoDate(customEnd)
+      }
+    }
+    return getDateRange(dateRangeDays, new Date())
+  }, [dateRangeDays, dateRangeKey, customStart, customEnd])
+
   const dateRangeLabel = useMemo(
     () => `${formatShortDate(start)} - ${formatShortDate(end)}`,
     [start, end]
@@ -420,23 +523,22 @@ export default function HomePage() {
         return "Last 90 days"
       case "365":
         return "Last 365 days"
+      case "custom":
+        return "Custom period"
     }
   }, [dateRangeKey])
 
   const recentEventDateLabel = useMemo(() => formatShortDate(end), [end])
   const bestRating = 8.6
   const worstRating = 5.8
+  
+  const [playerSortCol, setPlayerSortCol] = useState<"mentions" | "positivePct" | "avgRating" | "marketValue">("mentions")
+  const [playerSortDir, setPlayerSortDir] = useState<"asc" | "desc">("desc")
+  const [playerPositionFilter, setPlayerPositionFilter] = useState<string>("all")
 
   const psvMarqueeRowA = useMemo(() => Array.from({ length: 10 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
   const psvMarqueeRowB = useMemo(() => Array.from({ length: 9 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
   const psvMarqueeRowC = useMemo(() => Array.from({ length: 8 }, () => ({ src: "/sponsor-logos/psv-logo.svg", alt: "PSV" })), [])
-
-  const toIsoDateOnlyLocal = (d: Date) => {
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, "0")
-    const day = String(d.getDate()).padStart(2, "0")
-    return `${year}-${month}-${day}`
-  }
 
   useEffect(() => {
     setOverviewLoading(true)
@@ -446,8 +548,8 @@ export default function HomePage() {
     const run = async () => {
       try {
         const url = new URL("/api/new/overview/summary", window.location.origin)
-        url.searchParams.set("start", toIsoDateOnlyLocal(start))
-        url.searchParams.set("end", toIsoDateOnlyLocal(end))
+        url.searchParams.set("start", toIsoDateOnly(start))
+        url.searchParams.set("end", toIsoDateOnly(end))
         url.searchParams.set(
           "granularity",
           journeyGranularity === "weekly" ? "week" : "day",
@@ -461,6 +563,25 @@ export default function HomePage() {
         const data = (await res.json()) as OverviewSummaryResponse
         setOverview(data)
         setOverviewLoading(false)
+
+        // Now fetch AI summary separately
+        try {
+          const aiUrl = new URL("/api/new/overview/ai-summary", window.location.origin)
+          aiUrl.searchParams.set("start", toIsoDateOnly(start))
+          aiUrl.searchParams.set("end", toIsoDateOnly(end))
+          
+          const aiRes = await fetch(aiUrl.toString(), {
+             cache: "no-store",
+             signal: controller.signal
+          })
+          if(aiRes.ok) {
+             const aiData = await aiRes.json()
+             setOverview(prev => prev ? ({ ...prev, aiSummary: aiData.aiSummary }) : prev)
+          }
+        } catch (aiErr) {
+           console.error("AI summary fetch failed", aiErr)
+        }
+
       } catch (err: unknown) {
         if (err instanceof DOMException && err.name === "AbortError") return
 
@@ -564,6 +685,52 @@ export default function HomePage() {
     })
   }, [sentimentJourneyData.points])
 
+  const sortedAndFilteredPlayers = useMemo(() => {
+    let list = overview?.playerMentions?.fullReport ?? []
+
+    // Filter by position
+    if (playerPositionFilter !== "all") {
+      list = list.filter((p) => {
+        if (!p.position) return false
+        const pos = p.position.toLowerCase()
+        if (playerPositionFilter === "gk") return pos.includes("goalkeeper") || pos.includes("keeper")
+        if (playerPositionFilter === "def") return pos.includes("defender")
+        if (playerPositionFilter === "mid") return pos.includes("midfielder")
+        if (playerPositionFilter === "att") return pos.includes("attacker") || pos.includes("forward")
+        return true
+      })
+    }
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      let valA: number = 0
+      let valB: number = 0
+
+      switch (playerSortCol) {
+        case "mentions":
+          valA = a.mentions
+          valB = b.mentions
+          break
+        case "positivePct":
+          valA = a.positivePct
+          valB = b.positivePct
+          break
+        case "avgRating":
+          valA = a.avgRating ?? 0
+          valB = b.avgRating ?? 0
+          break
+        case "marketValue":
+          valA = a.marketValue ?? 0
+          valB = b.marketValue ?? 0
+          break
+      }
+
+      return playerSortDir === "asc" ? valA - valB : valB - valA
+    })
+
+    return list.map((p, i) => ({ ...p, rank: i + 1 }))
+  }, [overview, playerPositionFilter, playerSortCol, playerSortDir])
+
   return (
     <main className="max-w-screen-xl mx-auto px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -579,10 +746,31 @@ export default function HomePage() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
             <div className="inline-flex items-stretch">
-              <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
-                <CalendarIcon className="h-4 w-4" />
-                {dateRangeLabel}
-              </div>
+              {dateRangeKey === "custom" ? (
+                <div className="border-input bg-background flex h-9 items-center gap-2 rounded-l-md border border-r-0 px-2">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    max={customEnd}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                  <span className="text-muted-foreground">-</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    min={customStart}
+                    max={toIsoDateOnly(defaultEnd)}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                </div>
+              ) : (
+                <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+                  <CalendarIcon className="h-4 w-4" />
+                  {dateRangeLabel}
+                </div>
+              )}
               <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
                 <SelectTrigger className="h-9 rounded-l-none border-l-0">
                   <SelectValue />
@@ -592,6 +780,8 @@ export default function HomePage() {
                   <SelectItem value="30">Last 30 days</SelectItem>
                   <SelectItem value="90">Last 90 days</SelectItem>
                   <SelectItem value="365">Last 365 days</SelectItem>
+                  <Separator className="my-1" />
+                  <SelectItem value="custom">Custom Range</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -639,8 +829,22 @@ export default function HomePage() {
         <div className="relative z-10 flex h-full flex-wrap items-stretch justify-between gap-6 px-6 text-white md:flex-nowrap">
           <div className="flex flex-1 flex-col justify-center">
             <div className="text-3xl font-bold font-psv-branding italic leading-none md:text-3xl">OVERVIEW</div>
-            <div className="mt-2 max-w-[520px] text-sm text-white/80">
-              Snapshot of sentiment, mentions, and performance signals.
+            <div className="mt-2 max-w-[600px] text-sm text-white/80 leading-relaxed">
+              {overviewLoading ? (
+                <div className="animate-pulse flex flex-col gap-1.5 opacity-50">
+                   <div className="h-3 w-64 bg-white/40 rounded" />
+                   <div className="h-3 w-48 bg-white/40 rounded" />
+                </div>
+              ) : (
+                <div className="group flex items-center gap-3">
+                  {overview?.aiSummary && (
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/50 transition-colors group-hover:text-white/90" />
+                  )}
+                  <span>
+                    {overview?.aiSummary || "Snapshot of sentiment, mentions, and performance signals."}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1186,20 +1390,7 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {(
-                  [
-                    { rank: 1, topic: "Referee decision in the second half", mentions: 1240 },
-                    { rank: 2, topic: "Tactical change after halftime", mentions: 980 },
-                    { rank: 3, topic: "Performance of the midfield trio", mentions: 860 },
-                    { rank: 4, topic: "Injury update and squad depth", mentions: 740 },
-                    { rank: 5, topic: "VAR check and offside call", mentions: 690 },
-                    { rank: 6, topic: "Substitution impact late in the game", mentions: 640 },
-                    { rank: 7, topic: "Goalkeeper distribution and build-up play", mentions: 610 },
-                    { rank: 8, topic: "Set-piece defending and marking", mentions: 580 },
-                    { rank: 9, topic: "Atmosphere in the stadium", mentions: 540 },
-                    { rank: 10, topic: "Post-match interview highlights", mentions: 510 },
-                  ] as const
-                ).map((row, index) => (
+                {(overview?.hotTopics ?? []).map((row, index) => (
                   <tr key={row.rank} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
                     <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="px-3 py-2">
@@ -1210,6 +1401,13 @@ export default function HomePage() {
                     </td>
                   </tr>
                 ))}
+                {(!overview?.hotTopics || overview.hotTopics.length === 0) && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
+                      {overviewLoading ? "Loading..." : "No hot topics found"}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1221,20 +1419,32 @@ export default function HomePage() {
           <div className="flex items-center justify-between gap-3 px-6 py-4">
             <div className="text-base font-semibold font-psv-branding">PLAYER REPORT</div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-              >
-                <Filter className="h-4 w-4" />
-                <span>Filter</span>
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-              >
-                <ArrowUpDown className="h-4 w-4" />
-                <span>Sort</span>
-              </button>
+              <Select value={playerPositionFilter} onValueChange={setPlayerPositionFilter}>
+                <SelectTrigger className="h-9 w-auto gap-2 border-border bg-background px-3 text-sm text-foreground hover:bg-accent focus:ring-0 shadow-none">
+                  <Filter className="h-4 w-4" />
+                  <SelectValue placeholder="Filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Positions</SelectItem>
+                  <SelectItem value="gk">Goalkeepers</SelectItem>
+                  <SelectItem value="def">Defenders</SelectItem>
+                  <SelectItem value="mid">Midfielders</SelectItem>
+                  <SelectItem value="att">Attackers</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={playerSortCol} onValueChange={(v) => setPlayerSortCol(v as any)}>
+                <SelectTrigger className="h-9 w-auto gap-2 border-border bg-background px-3 text-sm text-foreground hover:bg-accent focus:ring-0 shadow-none">
+                  <ArrowUpDown className="h-4 w-4" />
+                  <SelectValue placeholder="Sort" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mentions">Mentions</SelectItem>
+                  <SelectItem value="positivePct">Sentiment %</SelectItem>
+                  <SelectItem value="avgRating">Avg Rating</SelectItem>
+                  <SelectItem value="marketValue">Market Value</SelectItem>
+                </SelectContent>
+              </Select>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>
@@ -1284,131 +1494,43 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {(
-                  [
-                    {
-                      rank: 1,
-                      player: "Guus Til",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 1840,
-                      avgSentiment: 62,
-                      avgPerformance: 8.6,
-                      marketValue: "€32.5M",
-                    },
-                    {
-                      rank: 2,
-                      player: "Armando Obispo",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 1290,
-                      avgSentiment: 41,
-                      avgPerformance: 5.8,
-                      marketValue: "€7.0M",
-                    },
-                    {
-                      rank: 3,
-                      player: "Johan Bakayoko",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 980,
-                      avgSentiment: 57,
-                      avgPerformance: 7.7,
-                      marketValue: "€45.0M",
-                    },
-                    {
-                      rank: 4,
-                      player: "Joey Veerman",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 860,
-                      avgSentiment: 49,
-                      avgPerformance: 7.3,
-                      marketValue: "€28.0M",
-                    },
-                    {
-                      rank: 5,
-                      player: "Luuk de Jong",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 820,
-                      avgSentiment: 55,
-                      avgPerformance: 7.1,
-                      marketValue: "€4.0M",
-                    },
-                    {
-                      rank: 6,
-                      player: "Noa Lang",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 780,
-                      avgSentiment: 46,
-                      avgPerformance: 6.9,
-                      marketValue: "€25.0M",
-                    },
-                    {
-                      rank: 7,
-                      player: "Walter Benítez",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 720,
-                      avgSentiment: 52,
-                      avgPerformance: 7.0,
-                      marketValue: "€9.0M",
-                    },
-                    {
-                      rank: 8,
-                      player: "Olivier Boscagli",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 690,
-                      avgSentiment: 50,
-                      avgPerformance: 6.8,
-                      marketValue: "€15.0M",
-                    },
-                    {
-                      rank: 9,
-                      player: "Ismael Saibari",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 640,
-                      avgSentiment: 53,
-                      avgPerformance: 6.7,
-                      marketValue: "€20.0M",
-                    },
-                    {
-                      rank: 10,
-                      player: "Sergiño Dest",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 610,
-                      avgSentiment: 47,
-                      avgPerformance: 6.6,
-                      marketValue: "€16.0M",
-                    },
-                  ] as const
-                ).map((row, index) => (
+                {sortedAndFilteredPlayers.map((row, index) => (
                   <tr
-                    key={row.rank}
+                    key={row.name}
                     className={cn(index % 2 === 0 ? "bg-background" : "bg-muted", "h-8")}
                   >
                     <td className="px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="h-full px-3">
                       <div className="flex h-full items-center gap-2">
                         <div className="pt-1 self-end">
-                          <Image
-                            src={row.playerImageSrc}
-                            alt={row.player}
-                            width={96}
-                            height={192}
-                            className="h-6 w-auto object-contain object-bottom"
-                          />
+                          <PlayerImage shirtNumber={row.shirtNumber} name={row.name} />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate">{row.player}</div>
+                          <div className="truncate">{row.name}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right font-medium tabular-nums">
-                      {row.mentions.toLocaleString()}
+                      {Math.floor(row.mentions).toLocaleString()}
                     </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{row.avgSentiment}%</td>
                     <td className="px-3 py-2 text-right font-medium tabular-nums">
-                      {row.avgPerformance.toFixed(1)}
+                      {row.mentions > 0 ? `${row.positivePct.toFixed(0)}%` : "—"}
                     </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{row.marketValue}</td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums">
+                      {row.avgRating ? row.avgRating.toFixed(1) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums">
+                      {formatMarketValue(row.marketValue)}
+                    </td>
                   </tr>
                 ))}
+                {sortedAndFilteredPlayers.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                      {overviewLoading ? "Loading..." : "No players found"}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1422,38 +1544,54 @@ export default function HomePage() {
 
           <div className="flex-1 min-h-0 px-6 pb-6">
             <div className="grid h-full grid-cols-3 gap-3">
-              {([
-                { postAlt: "Top exposure post 1", sponsorSrc: "/sponsor-logos/puma-logo.svg", sponsorAlt: "PUMA", appearances: 128 },
-                { postAlt: "Top exposure post 2", sponsorSrc: "/sponsor-logos/brainport.png", sponsorAlt: "Brainport", appearances: 97 },
-                { postAlt: "Top exposure post 3", sponsorSrc: "/sponsor-logos/energiedirect.png", sponsorAlt: "EnergieDirect", appearances: 84 },
-              ] as const).map((item) => (
-                <div
-                  key={item.sponsorSrc}
-                  className="flex h-full flex-col overflow-hidden"
-                >
-                  <div className="relative flex-1 min-h-0 w-full">
-                    <Image
-                      src="/posts/post-template.png"
-                      alt={item.postAlt}
-                      fill
-                      sizes="(min-width: 768px) 220px, 33vw"
-                      className="object-cover"
-                    />
-                  </div>
-                  <div className="shrink-0 flex flex-col items-center justify-center gap-1 border-t border-border bg-muted px-2 py-2">
-                    <Image
-                      src={item.sponsorSrc}
-                      alt={item.sponsorAlt}
-                      width={120}
-                      height={40}
-                      className="h-5 w-auto object-contain"
-                    />
-                    <div className="text-xs text-muted-foreground tabular-nums text-center">
-                      {item.appearances.toLocaleString()} <br/> appearances
+              {(overview?.topExposures ?? []).slice(0, 3).map((item) => {
+                const sponsorSrc = getSponsorLogo(item.brand)
+                return (
+                  <div
+                    key={item.brand}
+                    className="flex h-full flex-col overflow-hidden"
+                  >
+                    <div className="relative flex-1 min-h-0 w-full">
+                      <Image
+                        src={item.postUrl || "/posts/post-template.png"}
+                        alt={item.brand}
+                        fill
+                        sizes="(min-width: 768px) 220px, 33vw"
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="shrink-0 flex flex-col items-center justify-center gap-1 border-t border-border bg-muted px-2 py-2">
+                      {sponsorSrc ? (
+                        <Image
+                          src={sponsorSrc}
+                          alt={item.brand}
+                          width={120}
+                          height={40}
+                          className="h-5 w-auto object-contain"
+                        />
+                      ) : (
+                        <div className="flex h-5 items-center justify-center font-bold text-xs uppercase tracking-tight">
+                          {item.brand}
+                        </div>
+                      )}
+                    </div>
+                    <div className="shrink-0 flex flex-col gap-0.5 w-full text-[10px] text-muted-foreground px-3 py-2 bg-muted/40 border-t border-border/50">
+                      <div className="flex justify-between w-full">
+                        <span>App:</span>
+                        <span className="font-medium tabular-nums">{item.appearances.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between w-full">
+                        <span>Avg. vis:</span>
+                        <span className="font-medium tabular-nums">
+                          {item.avgVisibility > 1
+                            ? Math.round(item.avgVisibility)
+                            : Math.round(item.avgVisibility * 100)}%
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>

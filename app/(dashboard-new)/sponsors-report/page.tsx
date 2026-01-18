@@ -1,12 +1,13 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import {
   Activity,
   Calendar as CalendarIcon,
   Download,
   Eye,
+  FileText,
   Filter,
   HeartHandshake,
   LineChart as LineChartIcon,
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import { cn } from "@/lib/utils"
 import {
@@ -35,61 +37,16 @@ import {
   YAxis,
 } from "recharts"
 
-type DateRangeKey = "7" | "30" | "90" | "365"
+type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 
-type BrandKey = "puma" | "brainport" | "energiedirect" | "simac" | "goodhabitz" | "joe" | "fiftyplus"
-
-const brands: Array<{ key: BrandKey; name: string; logoSrcOnDark: string; logoSrcOnLight: string; logoAlt: string }> = [
-  {
-    key: "puma",
-    name: "PUMA",
-    logoSrcOnDark: "/sponsor-logos/puma-white.png",
-    logoSrcOnLight: "/sponsor-logos/puma-logo.svg",
-    logoAlt: "PUMA",
-  },
-  {
-    key: "brainport",
-    name: "Brainport",
-    logoSrcOnDark: "/sponsor-logos/brainport-white.png",
-    logoSrcOnLight: "/sponsor-logos/brainport.png",
-    logoAlt: "Brainport",
-  },
-  {
-    key: "energiedirect",
-    name: "EnergieDirect",
-    logoSrcOnDark: "/sponsor-logos/energiedirect.png",
-    logoSrcOnLight: "/sponsor-logos/energiedirect.png",
-    logoAlt: "EnergieDirect",
-  },
-  {
-    key: "simac",
-    name: "Simac",
-    logoSrcOnDark: "/sponsor-logos/simac-logo-rgb-transp.gif",
-    logoSrcOnLight: "/sponsor-logos/simac-logo-rgb-transp.gif",
-    logoAlt: "Simac",
-  },
-  {
-    key: "goodhabitz",
-    name: "GoodHabitz",
-    logoSrcOnDark: "/sponsor-logos/goodhabitz-logo-png.png",
-    logoSrcOnLight: "/sponsor-logos/goodhabitz-logo-png.png",
-    logoAlt: "GoodHabitz",
-  },
-  {
-    key: "joe",
-    name: "JOE",
-    logoSrcOnDark: "/sponsor-logos/joe-logo.svg",
-    logoSrcOnLight: "/sponsor-logos/joe-logo.svg",
-    logoAlt: "JOE",
-  },
-  {
-    key: "fiftyplus",
-    name: "50+",
-    logoSrcOnDark: "/sponsor-logos/50plus-logo.svg",
-    logoSrcOnLight: "/sponsor-logos/50plus-logo.svg",
-    logoAlt: "50+",
-  },
-]
+type Brand = {
+  id: number
+  name: string
+  slug: string
+  color: string
+  logo_light: string | null
+  logo_dark: string | null
+}
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
@@ -99,23 +56,29 @@ function formatShortDate(date: Date) {
   })
 }
 
+function toIsoDateOnly(date: Date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLocalIsoDate(value: string) {
+  const [y, m, d] = value.split("-").map(Number)
+  return new Date(y, m - 1, d)
+}
+
 function getDateRange(days: number, endDate: Date) {
   const end = new Date(endDate)
-  end.setHours(0, 0, 0, 0)
+  end.setHours(23, 59, 59, 999)
 
   const start = new Date(end)
   start.setDate(start.getDate() - (days - 1))
+  start.setHours(0,0,0,0)
 
   return { start, end }
-}
-
-function mulberry32(seed: number) {
-  return function () {
-    let t = (seed += 0x6d2b79f5)
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
 }
 
 function percentChange(current: number, previous: number) {
@@ -160,11 +123,53 @@ function addDaysLocal(date: Date, days: number) {
   return d
 }
 
+type SortKey = "impressions" | "visibility" | "time" | "sentiment"
+
 export default function SponsorsReportPage() {
   const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
-  const [brandKey, setBrandKey] = useState<BrandKey>("puma")
+  const [brandKey, setBrandKey] = useState<string>("puma")
+  const [sortBy, setSortBy] = useState<SortKey>("impressions")
+  const [availableBrands, setAvailableBrands] = useState<Brand[]>([])
+  const [brandsLoading, setBrandsLoading] = useState(true)
+
+  // Fetch available brands
+  useEffect(() => {
+    async function fetchBrands() {
+        try {
+            const res = await fetch("/api/new/settings/brands")
+            if (res.ok) {
+                const data = await res.json()
+                setAvailableBrands(data)
+                // If current brandKey is not in fetched brands, reset to first one
+                if (data.length > 0 && !data.find((b: Brand) => b.slug === brandKey)) {
+                   setBrandKey(data[0].slug)
+                }
+            }
+        } catch (e) {
+            console.error("Failed to fetch brands", e)
+        } finally {
+            setBrandsLoading(false)
+        }
+    }
+    fetchBrands()
+  }, [])
+  
+  // State for fetched data
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Custom date range state (defaults to last 30 days)
+  const defaultEnd = useMemo(() => new Date(), [])
+  const defaultStart = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    return d
+  }, [])
+  
+  const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
+  const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
 
   const dateRangeDays = useMemo(() => {
     switch (dateRangeKey) {
@@ -176,23 +181,50 @@ export default function SponsorsReportPage() {
         return 90
       case "365":
         return 365
+      default:
+        return 30
     }
   }, [dateRangeKey])
 
-  const { start, end } = useMemo(() => getDateRange(dateRangeDays, new Date()), [dateRangeDays])
+  const { start, end } = useMemo(() => {
+    if (dateRangeKey === "custom") {
+      return {
+        start: parseLocalIsoDate(customStart),
+        end: parseLocalIsoDate(customEnd)
+      }
+    }
+    return getDateRange(dateRangeDays, new Date())
+  }, [dateRangeDays, dateRangeKey, customStart, customEnd])
+
   const dateRangeLabel = useMemo(
     () => `${formatShortDate(start)} - ${formatShortDate(end)}`,
     [start, end]
   )
-
-  const { previousStart } = useMemo(() => {
+    
+  // Calculate previous period for API call
+  const { previousStart, previousEnd } = useMemo(() => {
     const prevEnd = new Date(start)
     prevEnd.setDate(prevEnd.getDate() - 1)
+    
+    // For custom ranges, we likely want the same duration
+    if (dateRangeKey === "custom") {
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
+        
+        const prevStart = new Date(prevEnd);
+        prevStart.setDate(prevStart.getDate() - (durationDays - 1));
+        return {
+            previousStart: prevStart,
+            previousEnd: prevEnd
+        }
+    }
+
     const prev = getDateRange(dateRangeDays, prevEnd)
     return {
       previousStart: prev.start,
+      previousEnd: prev.end
     }
-  }, [dateRangeDays, start])
+  }, [dateRangeDays, start, end, dateRangeKey])
 
   const periodLabel = useMemo(() => {
     switch (dateRangeKey) {
@@ -204,218 +236,183 @@ export default function SponsorsReportPage() {
         return "Last 90 days"
       case "365":
         return "Last 365 days"
+      case "custom":
+        return "Custom period"
     }
   }, [dateRangeKey])
 
-  const selectedBrand = useMemo(() => brands.find((b) => b.key === brandKey) ?? brands[0], [brandKey])
+  const selectedBrand = useMemo(() => {
+    return availableBrands.find((b) => b.slug === brandKey) ?? availableBrands[0] ?? { name: brandKey, slug: brandKey, color: "#999" }
+  }, [brandKey, availableBrands])
+
+  // Fetch Data
+  useEffect(() => {
+    // Wait for brands to load? Not strictly necessary but safe.
+    if (brandsLoading) return 
+
+    async function fetchData() {
+      setLoading(true)
+      try {
+        const query = new URLSearchParams({
+          start: start.getTime().toString(),
+          end: end.getTime().toString(),
+          previousStart: previousStart.getTime().toString(),
+          previousEnd: previousEnd.getTime().toString(),
+          brand: brandKey,
+          sortBy: sortBy
+        })
+        const res = await fetch(`/api/new/sponsors-report?${query.toString()}`)
+        if (res.ok) {
+            const json = await res.json()
+            setData(json)
+        }
+      } catch (err) {
+        console.error("Failed to fetch sponsor report", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [start, end, previousStart, previousEnd, brandKey, sortBy, brandsLoading])
 
   const topExposures = useMemo(() => {
-    const seedCurrent = Math.floor(start.getTime() / 86400000) + brandKey.length * 97
-    const seedPrevious = Math.floor(previousStart.getTime() / 86400000) + brandKey.length * 97
-    const r = mulberry32(seedCurrent)
-    const rp = mulberry32(seedPrevious)
-
-    const exposures = Math.round(65000 + r() * 215000)
-    const exposuresPrev = Math.round(65000 + rp() * 215000)
-
-    const impressions = Math.round(exposures * (1.8 + r() * 1.0))
-    const impressionsPrev = Math.round(exposuresPrev * (1.8 + rp() * 1.0))
-
-    const visibility = 22 + r() * 52
-    const visibilityPrev = 22 + rp() * 52
-
-    const items = Array.from({ length: 3 }).map((_, i) => {
-      const local = mulberry32(seedCurrent + i * 19)
-      const itemExposures = Math.round(exposures * (0.09 + local() * 0.07))
-      const itemImpressions = Math.round(itemExposures * (1.6 + local() * 1.4))
-      const itemVisibilityPct = 18 + local() * 62
-      return {
-        id: `${brandKey}-top-${seedCurrent}-${i}`,
-        imageSrc: "/posts/post-template.png",
-        impressions: itemImpressions,
-        visibilityPct: itemVisibilityPct,
-      }
-    })
+    if (!data) return { 
+      items: [], 
+      metrics: { 
+        exposures: { label: "Exposures", value: 0, previousValue: 0, icon: Eye }, 
+        impressions: { label: "Impressions", value: 0, previousValue: 0, icon: TrendingUp }, 
+        visibility: { label: "Avg. visibility", value: 0, previousValue: 0, icon: Activity } 
+      } 
+    }
 
     return {
-      items,
+      items: (data.topExposures || []).slice(0, 3), // Ensure max 3 items
       metrics: {
         exposures: {
           label: "Exposures",
-          value: exposures,
-          previousValue: exposuresPrev,
+          value: data.metrics.exposures.value,
+          previousValue: data.metrics.exposures.previousValue,
           icon: Eye,
         },
         impressions: {
           label: "Impressions",
-          value: impressions,
-          previousValue: impressionsPrev,
+          value: data.metrics.impressions.value,
+          previousValue: data.metrics.impressions.previousValue,
           icon: TrendingUp,
         },
         visibility: {
           label: "Avg. visibility",
-          value: visibility,
-          previousValue: visibilityPrev,
+          value: data.metrics.visibility.value,
+          previousValue: data.metrics.visibility.previousValue,
           icon: Activity,
         },
       },
     }
-  }, [brandKey, previousStart, start])
+  }, [data])
 
   const exposureTrends = useMemo(() => {
-    const startDay = new Date(start)
-    startDay.setHours(0, 0, 0, 0)
-    const endDay = new Date(end)
-    endDay.setHours(0, 0, 0, 0)
-
-    const seedBase = Math.floor(startDay.getTime() / 86400000) + brandKey.length * 1337
-    const r = mulberry32(seedBase)
-
-    const scale = Math.max(0.45, dateRangeDays / 30)
-    let brand = 2600 * scale + r() * 1600 * scale
-    let avg = 2400 * scale + r() * 1400 * scale
-
-    const data: Array<{ label: string; brand: number; avg: number }> = []
-    let cursor = new Date(startDay)
-    let index = 0
-
-    while (cursor <= endDay) {
-      const localSeed = seedBase + index * 17
-      const rb = mulberry32(localSeed + 1)
-      const ra = mulberry32(localSeed + 2)
-
-      const t = index / Math.max(10, Math.min(60, dateRangeDays))
-      const seasonal = Math.sin(t * Math.PI * 2)
-
-      brand = Math.max(0, brand + (rb() - 0.5) * 900 * scale + seasonal * 240 * scale)
-      avg = Math.max(0, avg + (ra() - 0.5) * 760 * scale + seasonal * 210 * scale)
-
-      data.push({
-        label: formatAxisLabel(cursor),
-        brand: Math.round(brand),
-        avg: Math.round(avg),
-      })
-
-      index += 1
-      cursor = addDaysLocal(cursor, dateRangeDays > 90 ? 7 : 1)
-    }
-
     const config: ChartConfig = {
-      brand: { label: selectedBrand.name, color: "var(--chart-1)" },
+      brand: { label: selectedBrand.name, color: selectedBrand.color || "hsl(var(--chart-1))" },
       avg: { label: "Average", color: "var(--muted-foreground)" },
     }
-
-    return { data, config }
-  }, [brandKey, dateRangeDays, end, selectedBrand.name, start])
+    return { data: data?.trends || [], config }
+  }, [data, selectedBrand.name])
 
   const sentimentMetric = useMemo(() => {
-    const seedCurrent = Math.floor(start.getTime() / 86400000) + brandKey.length * 404
-    const seedPrevious = Math.floor(previousStart.getTime() / 86400000) + brandKey.length * 404
-    const r = mulberry32(seedCurrent)
-    const rp = mulberry32(seedPrevious)
-
-    const current = 52 + r() * 36
-    const prev = 52 + rp() * 36
-
+    if (!data) return { label: "FAN SENTIMENT", value: 0, previousValue: 0, valueDisplay: "0%", previousValueDisplay: "0%" }
+    
     return {
       label: "FAN SENTIMENT",
-      value: current,
-      previousValue: prev,
-      valueDisplay: `${current.toFixed(1)}%`,
-      previousValueDisplay: `${prev.toFixed(1)}%`,
+      value: data.metrics.sentiment.value,
+      previousValue: data.metrics.sentiment.previousValue,
+      valueDisplay: `${data.metrics.sentiment.value.toFixed(1)}%`,
+      previousValueDisplay: `${data.metrics.sentiment.previousValue.toFixed(1)}%`,
     }
-  }, [brandKey, previousStart, start])
+  }, [data])
 
   const estimatedValueMetric = useMemo(() => {
-    const seedCurrent = Math.floor(start.getTime() / 86400000) + brandKey.length * 707
-    const seedPrevious = Math.floor(previousStart.getTime() / 86400000) + brandKey.length * 707
-    const r = mulberry32(seedCurrent)
-    const rp = mulberry32(seedPrevious)
-
-    const current = Math.round(180000 + r() * 1320000)
-    const prev = Math.round(180000 + rp() * 1320000)
+    if (!data) return { label: "ESTIMATED VALUE", value: 0, previousValue: 0, valueDisplay: "€0", previousValueDisplay: "€0" }
 
     return {
       label: "ESTIMATED VALUE",
-      value: current,
-      previousValue: prev,
-      valueDisplay: formatCurrencyEUR(current),
-      previousValueDisplay: formatCurrencyEUR(prev),
+      value: data.metrics.value.value,
+      previousValue: data.metrics.value.previousValue,
+      valueDisplay: formatCurrencyEUR(data.metrics.value.value),
+      previousValueDisplay: formatCurrencyEUR(data.metrics.value.previousValue),
     }
-  }, [brandKey, previousStart, start])
+  }, [data])
 
   const visibilityShare = useMemo(() => {
-    const seed = Math.floor(start.getTime() / 86400000) + brandKey.length * 919
-    const r = mulberry32(seed)
+    if (!data || !data.visibilityShare) return { data: [], config: {} }
 
-    const brandShare = 18 + r() * 42
-    const otherShare = Math.max(0, 100 - brandShare)
+    // data.visibilityShare is now [{ key: "brand", value: ... }, { key: "others", value: ... }]
+    const rawData = data.visibilityShare as { key: string, value: number }[];
+    
+    // Determine color for the selected brand
+    let brandColor = selectedBrand.color || "#000000";
 
-    const data = [
-      { key: "brand", name: selectedBrand.name, value: brandShare, color: "var(--chart-1)" },
-      { key: "others", name: "Other brands", value: otherShare, color: "var(--muted)" },
-    ] as const
+    const chartData = rawData.map(item => {
+        if (item.key === 'brand') {
+            return {
+                ...item,
+                name: selectedBrand.name,
+                color: brandColor
+            }
+        } else {
+            return {
+                ...item,
+                name: "Other",
+                color: "var(--muted)" // or a grey hex
+            }
+        }
+    });
 
     const config: ChartConfig = {
-      brand: { label: selectedBrand.name, color: "var(--chart-1)" },
-      others: { label: "Other brands", color: "var(--muted)" },
-    }
+      brand: { label: selectedBrand.name, color: brandColor },
+      others: { label: "Other", color: "var(--muted)" },
+    };
 
-    return { data, config }
-  }, [brandKey, selectedBrand.name, start])
+    return { data: chartData, config }
+  }, [data, selectedBrand])
 
   const cumulativeImpact = useMemo(() => {
-    const startDay = new Date(start)
-    startDay.setHours(0, 0, 0, 0)
-    const endDay = new Date(end)
-    endDay.setHours(0, 0, 0, 0)
-
-    const seedBase = Math.floor(startDay.getTime() / 86400000) + brandKey.length * 5151
-    const r = mulberry32(seedBase)
-
-    const scale = Math.max(0.45, dateRangeDays / 30)
-    let daily = 4200 * scale + r() * 3100 * scale
-    let avgDaily = 3900 * scale + r() * 2700 * scale
-    let cum = 0
-    let avgCum = 0
-
-    const data: Array<{ label: string; impressions: number; avg: number }> = []
-    let cursor = new Date(startDay)
-    let index = 0
-
-    while (cursor <= endDay) {
-      const localSeed = seedBase + index * 29
-      const ri = mulberry32(localSeed + 1)
-      const ra = mulberry32(localSeed + 2)
-      const t = index / Math.max(10, Math.min(60, dateRangeDays))
-      const seasonal = Math.cos(t * Math.PI * 2)
-
-      daily = Math.max(0, daily + (ri() - 0.5) * 1300 * scale + seasonal * 320 * scale)
-      avgDaily = Math.max(0, avgDaily + (ra() - 0.5) * 1100 * scale + seasonal * 280 * scale)
-
-      cum += daily
-      avgCum += avgDaily
-
-      data.push({
-        label: formatAxisLabel(cursor),
-        impressions: Math.round(cum),
-        avg: Math.round(avgCum),
-      })
-
-      index += 1
-      cursor = addDaysLocal(cursor, dateRangeDays > 90 ? 7 : 1)
-    }
-
     const config: ChartConfig = {
-      impressions: { label: selectedBrand.name, color: "var(--chart-1)" },
+      impressions: { label: selectedBrand.name, color: selectedBrand.color || "hsl(var(--chart-1))" },
       avg: { label: "Average", color: "var(--muted-foreground)" },
     }
+    return { data: data?.cumulativeImpact || [], config }
+  }, [data, selectedBrand.name])
 
-    return { data, config }
-  }, [brandKey, dateRangeDays, end, selectedBrand.name, start])
+  const mainRef = useRef<HTMLElement>(null)
+
+  const handleExport = async () => {
+    if (!mainRef.current) return
+    try {
+        const html2canvas = (await import("html2canvas")).default
+        const jsPDF = (await import("jspdf")).default
+        
+        const canvas = await html2canvas(mainRef.current, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+        })
+        
+        const imgData = canvas.toDataURL("image/png")
+        const pdf = new jsPDF({
+            orientation: "landscape",
+            unit: "px",
+            format: [canvas.width, canvas.height]
+        })
+        
+        pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height)
+        pdf.save("sponsors-report.pdf")
+    } catch (err) {
+        console.error("Export failed", err)
+    }
+  }
 
   return (
-    <main className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
+    <main ref={mainRef} className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
           <input
@@ -429,10 +426,31 @@ export default function SponsorsReportPage() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
             <div className="inline-flex items-stretch">
-              <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
-                <CalendarIcon className="h-4 w-4" />
-                {dateRangeLabel}
-              </div>
+            {dateRangeKey === "custom" ? (
+                <div className="border-input bg-background flex h-9 items-center gap-2 rounded-l-md border border-r-0 px-2">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    max={customEnd}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                  <span className="text-muted-foreground">-</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    min={customStart}
+                    max={toIsoDateOnly(defaultEnd)}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                </div>
+              ) : (
+                <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+                  <CalendarIcon className="h-4 w-4" />
+                  {dateRangeLabel}
+                </div>
+              )}
               <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
                 <SelectTrigger className="h-9 rounded-l-none border-l-0">
                   <SelectValue />
@@ -442,6 +460,8 @@ export default function SponsorsReportPage() {
                   <SelectItem value="30">Last 30 days</SelectItem>
                   <SelectItem value="90">Last 90 days</SelectItem>
                   <SelectItem value="365">Last 365 days</SelectItem>
+                  <Separator className="my-1" />
+                  <SelectItem value="custom">Custom Range</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -465,23 +485,24 @@ export default function SponsorsReportPage() {
                 className="bg-popover text-popover-foreground absolute right-0 top-full z-50 mt-2 w-[320px] max-w-[calc(100vw-3rem)] overflow-x-hidden rounded-md border p-3 text-sm shadow-md"
               >
                 <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">Brand</div>
-                <div role="radiogroup" className="space-y-2">
-                  {brands.map((brand) => {
-                    const selected = brand.key === brandKey
+                <div role="radiogroup" className="max-h-[300px] overflow-y-auto space-y-2">
+                  {availableBrands.map((brand) => {
+                    const selected = brand.slug === brandKey
+                    const logo = brand.logo_light
                     return (
                       <label
-                        key={brand.key}
+                        key={brand.slug}
                         className={cn(
-                          "flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2",
+                          "relative flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2",
                           selected ? "bg-muted" : "bg-background hover:bg-accent"
                         )}
                       >
                         <input
                           type="radio"
                           name="brand"
-                          value={brand.key}
+                          value={brand.slug}
                           checked={selected}
-                          onChange={() => setBrandKey(brand.key)}
+                          onChange={() => setBrandKey(brand.slug)}
                           className="sr-only"
                         />
                         <div
@@ -491,14 +512,17 @@ export default function SponsorsReportPage() {
                           )}
                           aria-hidden="true"
                         />
-                        <Image
-                          src={brand.logoSrcOnLight}
-                          alt={brand.logoAlt}
-                          width={140}
-                          height={42}
-                          className={cn("h-6 w-auto object-contain", selected ? "opacity-100" : "opacity-75 grayscale")}
-                        />
-                        <span className="sr-only">{brand.name}</span>
+                        {logo ? (
+                          <Image
+                            src={logo}
+                            alt={brand.name}
+                            width={140}
+                            height={42}
+                            className={cn("h-6 w-auto object-contain", selected ? "opacity-100" : "opacity-75 grayscale")}
+                          />
+                        ) : (
+                          <span className="font-semibold text-sm">{brand.name}</span>
+                        )}
                       </label>
                     )
                   })}
@@ -509,6 +533,7 @@ export default function SponsorsReportPage() {
 
           <button
             type="button"
+            onClick={handleExport}
             className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
           >
             <Download className="h-4 w-4" />
@@ -538,16 +563,19 @@ export default function SponsorsReportPage() {
               <div className="w-full overflow-hidden">
                 <div className="psv-logo-marquee psv-logo-marquee--a flex w-max items-center gap-10 will-change-transform">
                   {Array.from({ length: 12 }).flatMap((_, i) =>
-                    [0, 1].map((dup) => (
+                    [0, 1].map((dup) => {
+                      const logoSrc = selectedBrand.logo_dark || selectedBrand.logo_light || "https://placehold.co/140x40"
+                      return (
                       <Image
-                        key={`brand-a-${selectedBrand.key}-${i}-${dup}`}
-                        src={selectedBrand.logoSrcOnDark}
-                        alt={selectedBrand.logoAlt}
+                        key={`brand-a-${selectedBrand.slug}-${i}-${dup}`}
+                        src={logoSrc}
+                        alt={selectedBrand.name}
                         width={140}
                         height={40}
                         className="h-8 w-auto opacity-80 grayscale brightness-200"
                       />
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>
@@ -555,16 +583,19 @@ export default function SponsorsReportPage() {
               <div className="w-full overflow-hidden">
                 <div className="psv-logo-marquee psv-logo-marquee--b flex w-max items-center gap-10 will-change-transform">
                   {Array.from({ length: 12 }).flatMap((_, i) =>
-                    [0, 1].map((dup) => (
+                    [0, 1].map((dup) => {
+                      const logoSrc = selectedBrand.logo_dark || selectedBrand.logo_light || "https://placehold.co/140x40"
+                      return (
                       <Image
-                        key={`brand-b-${selectedBrand.key}-${i}-${dup}`}
-                        src={selectedBrand.logoSrcOnDark}
-                        alt={selectedBrand.logoAlt}
+                        key={`brand-b-${selectedBrand.slug}-${i}-${dup}`}
+                        src={logoSrc}
+                        alt={selectedBrand.name}
                         width={140}
                         height={40}
                         className="h-8 w-auto opacity-70 grayscale brightness-200"
                       />
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>
@@ -572,16 +603,19 @@ export default function SponsorsReportPage() {
               <div className="w-full overflow-hidden">
                 <div className="psv-logo-marquee psv-logo-marquee--c flex w-max items-center gap-10 will-change-transform">
                   {Array.from({ length: 12 }).flatMap((_, i) =>
-                    [0, 1].map((dup) => (
+                    [0, 1].map((dup) => {
+                      const logoSrc = selectedBrand.logo_dark || selectedBrand.logo_light || "https://placehold.co/140x40"
+                      return (
                       <Image
-                        key={`brand-c-${selectedBrand.key}-${i}-${dup}`}
-                        src={selectedBrand.logoSrcOnDark}
-                        alt={selectedBrand.logoAlt}
+                        key={`brand-c-${selectedBrand.slug}-${i}-${dup}`}
+                        src={logoSrc}
+                        alt={selectedBrand.name}
                         width={140}
                         height={40}
                         className="h-8 w-auto opacity-60 grayscale brightness-200"
                       />
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>
@@ -596,36 +630,59 @@ export default function SponsorsReportPage() {
             <Eye className="h-4 w-4" />
             <span>TOP EXPOSURES</span>
           </div>
-          <div className="text-sm text-muted-foreground">{periodLabel}</div>
+          <div className="flex items-center gap-3">
+             <div className="flex items-center gap-2">
+                 <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
+                    <SelectTrigger className="h-8 w-[130px] text-xs">
+                        <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="time">Recent</SelectItem>
+                        <SelectItem value="visibility">Visibility Score</SelectItem>
+                        <SelectItem value="impressions">Impressions</SelectItem>
+                        {/* <SelectItem value="sentiment">Sentiment</SelectItem> */}
+                    </SelectContent>
+                 </Select>
+             </div>
+             <div className="text-sm text-muted-foreground">{periodLabel}</div>
+           </div>
         </div>
 
         <div className="px-6 pb-6 flex-1 min-h-0">
           <div className="grid h-full min-h-0 grid-cols-1 gap-6 md:grid-cols-[2fr_1px_1fr]">
             <div className="grid h-full min-h-0 auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-3">
-              {topExposures.items.map((item) => (
-                <div key={item.id} className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-                  <div className="relative w-full flex-1 min-h-0">
-                    <Image
-                      src={item.imageSrc}
-                      alt="Top exposure"
-                      fill
-                      sizes="(min-width: 1024px) 260px, (min-width: 640px) 33vw, 100vw"
-                      className="object-cover"
-                    />
-                  </div>
-
-                  <div className="shrink-0 h-20 border-t border-border bg-muted px-3 py-3 flex flex-col">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="text-xs text-muted-foreground truncate">Impressions</div>
-                      <div className="text-xs font-semibold tabular-nums">{formatCompactNumber(item.impressions)}</div>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <div className="text-xs text-muted-foreground">Visibility</div>
-                      <div className="text-xs font-semibold tabular-nums">{item.visibilityPct.toFixed(1)}%</div>
-                    </div>
-                  </div>
+              {topExposures.items.length === 0 ? (
+                <div className="col-span-3 flex h-full flex-col items-center justify-center text-center text-muted-foreground p-8 border border-dashed border-border rounded-lg bg-muted/20">
+                  <FileText className="h-10 w-10 opacity-30 mb-2" />
+                  <span className="text-sm font-medium">No posts found</span>
+                  <span className="text-xs">Try adjusting your filters or date range</span>
                 </div>
-              ))}
+              ) : (
+                topExposures.items.map((item: any) => (
+                  <div key={item.id} className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+                    <div className="relative w-full flex-1 min-h-0">
+                      <Image
+                        src={item.imageSrc}
+                        alt="Top exposure"
+                        fill
+                        sizes="(min-width: 1024px) 260px, (min-width: 640px) 33vw, 100vw"
+                        className="object-cover"
+                      />
+                    </div>
+
+                    <div className="shrink-0 h-16 border-t border-border bg-muted px-3 py-3 flex flex-col">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-xs text-muted-foreground truncate">Impressions</div>
+                        <div className="text-xs font-semibold tabular-nums">{formatCompactNumber(item.impressions)}</div>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="text-xs text-muted-foreground">Visibility</div>
+                        <div className="text-xs font-semibold tabular-nums">{item.visibilityPct.toFixed(1)}%</div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
             <div className="hidden md:block w-px bg-border" />
@@ -832,7 +889,7 @@ export default function SponsorsReportPage() {
                   stroke="transparent"
                   strokeWidth={0}
                 >
-                  {visibilityShare.data.map((item) => (
+                  {visibilityShare.data.map((item: any) => (
                     <Cell key={item.key} fill={item.color} />
                   ))}
                 </Pie>
@@ -840,7 +897,7 @@ export default function SponsorsReportPage() {
             </ChartContainer>
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
-              {visibilityShare.data.map((item) => (
+              {visibilityShare.data.map((item: any) => (
                 <div key={item.key} className="flex items-center gap-2">
                   <span className="h-[10px] w-[10px] rounded-[2px]" style={{ backgroundColor: item.color }} aria-hidden />
                   <span>{legendLabel(item.name)}</span>

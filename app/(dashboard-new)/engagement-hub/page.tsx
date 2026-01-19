@@ -55,8 +55,15 @@ type SentimentJourneyPoint = {
   positiveCount: number
   negativeCount: number
   negativeDisplay: number
+  totalCount: number
   isoStart: string
   isoEnd: string
+  positivePct?: number
+  negativePct?: number
+  negativePctDisplay?: number
+  neutralPct?: number
+  neutralPctHalf?: number
+  neutralPctHalfDisplay?: number
 }
 
 type SentimentJourneySummary = {
@@ -72,6 +79,62 @@ type SentimentJourneyEvent = {
   title: string
   subtitle: string
 }
+
+type PlayerMentionsStats = {
+  name: string
+  shirtNumber: number | null
+  mentions: number
+  mentionsChangePct: number
+  positivePct: number
+  neutralPct: number
+  negativePct: number
+}
+
+type HotTopic = {
+  rank: number
+  topic: string
+  mentions: number
+}
+
+type TopExposure = {
+  brand: string
+  appearances: number
+  postUrl: string
+  visibilityScore: number
+  avgVisibility: number
+}
+
+type PlayerReportItem = {
+  name: string
+  shirtNumber: number | null
+  position: string | null
+  mentions: number
+  positivePct: number
+  avgRating: number | null
+  marketValue: number | null
+}
+
+type OverviewSummaryResponse = {
+  meta: {
+    start: string
+    end: string
+    granularity: "day" | "week"
+  }
+  sentimentJourney: {
+    points: SentimentJourneyPoint[]
+    summary: SentimentJourneySummary
+    events: SentimentJourneyEvent[]
+  }
+  playerMentions: {
+    mostPopular: PlayerMentionsStats | null
+    mostControversial: PlayerMentionsStats | null
+    fullReport: PlayerReportItem[]
+  }
+  hotTopics: HotTopic[]
+  topExposures: TopExposure[]
+  aiSummary: string | null
+}
+
 
 const sentimentJourneyChartConfig: ChartConfig = {
   positiveCount: {
@@ -219,6 +282,7 @@ function makeMockJourney(start: Date, end: Date, granularity: JourneyGranularity
       positiveCount: pos,
       negativeCount: neg,
       negativeDisplay: -neg,
+      totalCount: pos + neg,
       isoStart: toIsoDateOnly(visibleStart),
       isoEnd: toIsoDateOnly(visibleEnd),
     })
@@ -269,6 +333,44 @@ function makeMockJourneyEvents(points: SentimentJourneyPoint[], seedBase: number
       }
     })
 }
+
+function getRatingBadgeClass(rating: number) {
+  if (rating < 6) return "bg-red-500"
+  if (rating < 8) return "bg-orange-400"
+  return "bg-green-500"
+}
+
+function formatMarketValue(value: number | null) {
+  if (value === null) return "—"
+  if (value >= 1_000_000) {
+    return `€${(value / 1_000_000).toFixed(1)}M`
+  }
+  if (value >= 1_000) {
+    return `€${(value / 1_000).toFixed(1)}K`
+  }
+  return `€${value}`
+}
+
+function PlayerImage({ shirtNumber, name }: { shirtNumber: number | null; name: string }) {
+  const initialSrc = shirtNumber ? `/player_images/${shirtNumber}.png` : "/player_images/no_image.png"
+  const [src, setSrc] = useState(initialSrc)
+
+  useEffect(() => {
+    setSrc(initialSrc)
+  }, [initialSrc, shirtNumber])
+
+  return (
+    <Image
+      src={src}
+      alt={name}
+      width={96}
+      height={192}
+      className="h-6 w-auto object-contain object-bottom"
+      onError={() => setSrc("/player_images/no_image.png")}
+    />
+  )
+}
+
 
 function SentimentJourneyEventOverlay({
   points,
@@ -365,6 +467,14 @@ export default function EngagementHubPage() {
   const [customEnd, setCustomEnd] = useState<Date | undefined>()
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
+  const [journeyNormalize, setJourneyNormalize] = useState(false)
+  const [playerPositionFilter, setPlayerPositionFilter] = useState("all")
+  const [playerSortCol, setPlayerSortCol] = useState<"mentions" | "positivePct" | "avgRating" | "marketValue">("mentions")
+  const [playerSortDir, setPlayerSortDir] = useState<"asc" | "desc">("desc")
+
+  const [overview, setOverview] = useState<OverviewSummaryResponse | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(true)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
 
   const sentimentVsMarketValueRef = useRef<HTMLDivElement | null>(null)
   const mentionsShareRef = useRef<HTMLDivElement | null>(null)
@@ -434,34 +544,86 @@ export default function EngagementHubPage() {
     return labels[dateRangeKey] || "Select period"
   }, [dateRangeKey])
 
-  const sentimentJourneyData = useMemo(() => {
-    const days = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
-    const prevEnd = addDaysLocal(start, -1)
-    const prevStart = addDaysLocal(prevEnd, -(days - 1))
+  useEffect(() => {
+    setOverviewLoading(true)
+    setOverviewError(null)
 
-    const seedBase =
-      start.getFullYear() * 10000 +
-      (start.getMonth() + 1) * 100 +
-      start.getDate() +
-      (journeyGranularity === "weekly" ? 777 : 333)
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        const url = new URL("/api/new/overview/summary", window.location.origin)
+        url.searchParams.set("start", toIsoDateOnly(start))
+        url.searchParams.set("end", toIsoDateOnly(end))
+        url.searchParams.set(
+          "granularity",
+          journeyGranularity === "weekly" ? "week" : "day",
+        )
 
-    const current = makeMockJourney(start, end, journeyGranularity, seedBase)
-    const previous = makeMockJourney(prevStart, prevEnd, journeyGranularity, seedBase + 999)
+        const res = await fetch(url.toString(), {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`API ${res.status}`)
+        const data = (await res.json()) as OverviewSummaryResponse
+        setOverview(data)
+        setOverviewLoading(false)
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return
 
-    const summary: SentimentJourneySummary = {
-      positiveCount: current.positiveCount,
-      negativeCount: current.negativeCount,
-      positiveChangePct: percentChange(current.positiveCount, previous.positiveCount),
-      negativeChangePct: percentChange(current.negativeCount, previous.negativeCount),
+        const message =
+          err instanceof Error ? err.message : "Failed to load overview"
+        setOverviewError(message)
+        setOverviewLoading(false)
+      }
     }
 
-    return { points: current.points, summary }
+    void run()
+    return () => controller.abort()
   }, [start, end, journeyGranularity])
 
+  const sentimentJourneyData = useMemo(() => {
+    const empty: { points: SentimentJourneyPoint[]; summary: SentimentJourneySummary } = {
+      points: [],
+      summary: {
+        positiveCount: 0,
+        negativeCount: 0,
+        positiveChangePct: 0,
+        negativeChangePct: 0,
+      },
+    }
+
+    return overview?.sentimentJourney
+      ? { points: overview.sentimentJourney.points, summary: overview.sentimentJourney.summary }
+      : empty
+  }, [overview])
+
+  const sentimentJourneyChartData = useMemo(() => {
+    return sentimentJourneyData.points.map((point) => {
+      const total = Number(point.totalCount ?? 0)
+      const pos = Number(point.positiveCount ?? 0)
+      const neg = Number(point.negativeCount ?? 0)
+
+      const positivePct = total > 0 ? (pos / total) * 100 : 0
+      const negativePct = total > 0 ? (neg / total) * 100 : 0
+      const neutralPctRaw = total > 0 ? 100 - positivePct - negativePct : 0
+      const neutralPct = clamp(neutralPctRaw, 0, 100)
+      const neutralPctHalf = neutralPct / 2
+
+      return {
+        ...point,
+        positivePct,
+        negativePct,
+        negativePctDisplay: -negativePct,
+        neutralPct,
+        neutralPctHalf,
+        neutralPctHalfDisplay: -neutralPctHalf,
+      }
+    })
+  }, [sentimentJourneyData.points])
+
   const sentimentJourneyEvents = useMemo(() => {
-    const seedBase = start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate() + 909
-    return makeMockJourneyEvents(sentimentJourneyData.points, seedBase)
-  }, [sentimentJourneyData.points, start])
+    return overview?.sentimentJourney?.events ?? ([] as SentimentJourneyEvent[])
+  }, [overview])
 
   const sentimentJourneyDomainMax = useMemo(() => {
     const maxAbs = sentimentJourneyData.points.reduce((acc, p) => {
@@ -475,13 +637,36 @@ export default function EngagementHubPage() {
   }, [sentimentJourneyData.points])
 
   const mentionsShare = useMemo(() => {
-    const data: MentionsShareSlice[] = [
-      { key: "p1", name: "Guus Til", value: 28, color: "var(--chart-1)" },
-      { key: "p2", name: "Armando Obispo", value: 18, color: "var(--chart-2)" },
-      { key: "p3", name: "Johan Bakayoko", value: 22, color: "var(--chart-3)" },
-      { key: "p4", name: "Joey Veerman", value: 16, color: "var(--chart-4)" },
-      { key: "p5", name: "Luuk de Jong", value: 16, color: "var(--chart-5)" },
-    ]
+    if (!overview?.playerMentions?.fullReport) {
+      return { data: [], config: {} }
+    }
+
+    const players = overview.playerMentions.fullReport
+    const totalMentions = players.reduce((acc, p) => acc + Math.max(0, Number(p.mentions ?? 0)), 0)
+    if (!totalMentions) return { data: [], config: {} }
+
+    const topN = 5
+    const sorted = [...players].sort((a, b) => b.mentions - a.mentions)
+    const top = sorted.slice(0, topN)
+
+    const topMentions = top.reduce((acc, p) => acc + Math.max(0, Number(p.mentions ?? 0)), 0)
+    const data: MentionsShareSlice[] = top.map((p, i) => ({
+      key: `p${i}`,
+      name: p.name,
+      value: (Math.max(0, Number(p.mentions ?? 0)) / totalMentions) * 100,
+      color: `var(--chart-${(i % 5) + 1})`,
+    }))
+
+    const otherMentions = Math.max(0, totalMentions - topMentions)
+    if (sorted.length > topN && otherMentions > 0) {
+      const topShareSum = data.reduce((acc, item) => acc + item.value, 0)
+      data.push({
+        key: "other",
+        name: "Other",
+        value: Math.max(0, 100 - topShareSum),
+        color: "var(--muted-foreground)",
+      })
+    }
 
     const config: ChartConfig = Object.fromEntries(
       data.map((item) => [
@@ -494,7 +679,120 @@ export default function EngagementHubPage() {
     )
 
     return { data, config }
-  }, [])
+  }, [overview])
+
+  const sentimentVsValuePlayers = useMemo(() => {
+    if (!overview?.playerMentions?.fullReport) return []
+    
+    // Players with known MV
+    const valid = overview.playerMentions.fullReport.filter(p => p.marketValue !== null && p.marketValue > 0)
+    if (valid.length < 2) return []
+
+    // Calculate percentiles for market value to properly segment low/high
+    const marketValues = valid.map(p => p.marketValue || 0).sort((a, b) => a - b)
+    const medianMV = marketValues[Math.floor(marketValues.length / 2)]
+    
+    // Weighted score for impact: sentiment * log(mentions) 
+    // This helps bubble up players with actual volume and good/bad sentiment rather than just 100% on 1 mention
+    const scorePlayer = (p: typeof valid[0], type: 'positive' | 'negative') => {
+        const sentiment = type === 'positive' ? p.positivePct : (100 - p.positivePct)
+        // Log base 10 of mentions (capped at at least 1) to damp effect of very high mentions 
+        // but penalize very low mentions heavily
+        const weight = Math.log10(Math.max(p.mentions, 1))
+        return sentiment * weight
+    }
+
+    // 1. Low MV (< median) AND High Positive Impact (Sentiment x Volume)
+    const lowMvPlayers = valid.filter(p => (p.marketValue || 0) < medianMV)
+    const bestLowMv = lowMvPlayers.sort((a, b) => scorePlayer(b, 'positive') - scorePlayer(a, 'positive'))[0]
+    
+    // 2. High MV (>= median) AND High Negative Impact (Low Sentiment x Volume)
+    const highMvPlayers = valid.filter(p => (p.marketValue || 0) >= medianMV)
+    const worstHighMv = highMvPlayers.sort((a, b) => scorePlayer(b, 'negative') - scorePlayer(a, 'negative'))[0]
+    
+    const results = []
+    
+    if (bestLowMv) {
+        const parts = bestLowMv.name.split(" ")
+        const lastName = parts.pop() || bestLowMv.name
+        const firstName = parts.join(" ")
+        
+        results.push({
+            firstName,
+            lastName,
+            imageSrc: bestLowMv.shirtNumber ? `/player_images/${bestLowMv.shirtNumber}.png` : "/player_images/no_image.png",
+            marketValue: formatMarketValue(bestLowMv.marketValue),
+            sentimentLabel: `${Math.round(bestLowMv.positivePct)}% positive`,
+            sentimentVariant: "positive" as const
+        })
+    }
+    
+    if (worstHighMv) {
+        const parts = worstHighMv.name.split(" ")
+        const lastName = parts.pop() || worstHighMv.name
+        const firstName = parts.join(" ")
+        
+        // Invert positive for negative label proxy
+        const negProxy = 100 - worstHighMv.positivePct
+        
+        results.push({
+            firstName,
+            lastName,
+            imageSrc: worstHighMv.shirtNumber ? `/player_images/${worstHighMv.shirtNumber}.png` : "/player_images/no_image.png",
+            marketValue: formatMarketValue(worstHighMv.marketValue),
+            sentimentLabel: `${Math.round(negProxy)}% negative`,
+            sentimentVariant: "negative" as const
+        })
+    }
+    
+    return results
+  }, [overview])
+
+  const sortedAndFilteredPlayers = useMemo(() => {
+    let list = overview?.playerMentions?.fullReport ?? []
+
+    // Filter by position
+    if (playerPositionFilter !== "all") {
+      list = list.filter((p) => {
+        if (!p.position) return false
+        const pos = p.position.toLowerCase()
+        if (playerPositionFilter === "gk") return pos.includes("goalkeeper") || pos.includes("keeper")
+        if (playerPositionFilter === "def") return pos.includes("defender")
+        if (playerPositionFilter === "mid") return pos.includes("midfielder")
+        if (playerPositionFilter === "att") return pos.includes("attacker") || pos.includes("forward")
+        return true
+      })
+    }
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      let valA: number = 0
+      let valB: number = 0
+
+      switch (playerSortCol) {
+        case "mentions":
+          valA = a.mentions
+          valB = b.mentions
+          break
+        case "positivePct":
+          valA = a.positivePct
+          valB = b.positivePct
+          break
+        case "avgRating":
+          valA = a.avgRating ?? 0
+          valB = b.avgRating ?? 0
+          break
+        case "marketValue":
+          valA = a.marketValue ?? 0
+          valB = b.marketValue ?? 0
+          break
+      }
+
+      return playerSortDir === "asc" ? valA - valB : valB - valA
+    })
+
+    return list.map((p, i) => ({ ...p, rank: i + 1 }))
+  }, [overview, playerPositionFilter, playerSortCol, playerSortDir])
 
   const platformShare = useMemo(() => {
     const data: MentionsShareSlice[] = [
@@ -566,9 +864,9 @@ export default function EngagementHubPage() {
             </>
           )}
 
-          <div className="inline-flex items-stretch shadow-sm">
+          <div className="inline-flex items-stretch">
             <div
-              className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm text-muted-foreground"
+              className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm"
               aria-hidden="true"
             >
               <CalendarIcon className="h-4 w-4" />
@@ -703,7 +1001,7 @@ export default function EngagementHubPage() {
                 type="button"
                 onClick={() => setJourneyGranularity("daily")}
                 className={cn(
-                  "inline-flex h-7 items-center rounded-sm px-3",
+                  "inline-flex items-center rounded-sm px-3",
                   journeyGranularity === "daily" ? "bg-black text-white" : "text-muted-foreground hover:bg-accent"
                 )}
               >
@@ -713,7 +1011,7 @@ export default function EngagementHubPage() {
                 type="button"
                 onClick={() => setJourneyGranularity("weekly")}
                 className={cn(
-                  "inline-flex h-7 items-center rounded-sm px-3",
+                  "inline-flex items-center rounded-sm px-3",
                   journeyGranularity === "weekly" ? "bg-black text-white" : "text-muted-foreground hover:bg-accent"
                 )}
               >
@@ -721,13 +1019,15 @@ export default function EngagementHubPage() {
               </button>
             </div>
 
-            <button
-              type="button"
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-            >
-              <ArrowRight className="h-4 w-4" />
-              <span>More</span>
-            </button>
+            <label className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-black"
+                checked={journeyNormalize}
+                onChange={(e) => setJourneyNormalize(e.target.checked)}
+              />
+              <span>Normalize</span>
+            </label>
           </div>
         </div>
 
@@ -746,7 +1046,7 @@ export default function EngagementHubPage() {
               }
             >
               <BarChart
-                data={sentimentJourneyData.points}
+                data={sentimentJourneyChartData}
                 margin={{ top: 12, right: 18, left: 0, bottom: 0 }}
                 stackOffset="sign"
               >
@@ -769,14 +1069,37 @@ export default function EngagementHubPage() {
                             <span className="inline-flex items-center gap-2 text-green-500">
                               <ThumbsUp className="h-4 w-4" />
                             </span>
-                            <span className="font-medium tabular-nums">{point.positiveCount.toLocaleString()}</span>
+                            <span className="font-medium tabular-nums">
+                              {journeyNormalize
+                                ? `${(point.positivePct ?? 0).toFixed(0)}%`
+                                : point.positiveCount.toLocaleString()}
+                            </span>
                           </div>
+                          {journeyNormalize ? (
+                            <div className="flex items-center justify-between gap-6">
+                              <span className="inline-flex items-center gap-2 text-white/70">
+                                <Smile className="h-4 w-4" />
+                              </span>
+                              <span className="font-medium tabular-nums">
+                                {(point.neutralPct ?? 0).toFixed(0)}%
+                              </span>
+                            </div>
+                          ) : null}
                           <div className="flex items-center justify-between gap-6">
                             <span className="inline-flex items-center gap-2 text-red-500">
                               <ThumbsDown className="h-4 w-4" />
                             </span>
-                            <span className="font-medium tabular-nums">{point.negativeCount.toLocaleString()}</span>
+                            <span className="font-medium tabular-nums">
+                              {journeyNormalize
+                                ? `${(point.negativePct ?? 0).toFixed(0)}%`
+                                : point.negativeCount.toLocaleString()}
+                            </span>
                           </div>
+                          {journeyNormalize ? (
+                            <div className="pt-1 text-[11px] text-white/70 tabular-nums">
+                              Total: {total.toLocaleString()}
+                            </div>
+                          ) : null}
                           <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/70">
                             <LineChartIcon className="h-3.5 w-3.5" />
                             <span className="tabular-nums">{netPct.toFixed(0)}%</span>
@@ -789,14 +1112,79 @@ export default function EngagementHubPage() {
                 <XAxis dataKey="label" tickLine={false} axisLine={false} />
                 <YAxis
                   width={40}
-                  domain={[-sentimentJourneyDomainMax, sentimentJourneyDomainMax]}
-                  ticks={[-sentimentJourneyDomainMax, 0, sentimentJourneyDomainMax]}
+                  domain={
+                    journeyNormalize
+                      ? ([-100, 100] as const)
+                      : ([-sentimentJourneyDomainMax, sentimentJourneyDomainMax] as const)
+                  }
+                  ticks={
+                    journeyNormalize
+                      ? ([-100, 0, 100] as const)
+                      : ([-sentimentJourneyDomainMax, 0, sentimentJourneyDomainMax] as const)
+                  }
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(v) => Math.abs(Number(v)).toLocaleString()}
+                  tickFormatter={(v) =>
+                    journeyNormalize
+                      ? `${Math.abs(Number(v)).toFixed(0)}%`
+                      : Math.abs(Number(v)).toLocaleString()
+                  }
                 />
-                <Bar dataKey="positiveCount" stackId="totals" radius={0} className="fill-green-500" />
-                <Bar dataKey="negativeDisplay" stackId="totals" radius={0} className="fill-red-500" />
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-neg-neutral"
+                    dataKey="neutralPctHalfDisplay"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-gray-300 dark:fill-gray-700"
+                  />
+                ) : null}
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-neg"
+                    dataKey="negativePctDisplay"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-red-500"
+                  />
+                ) : null}
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-pos-neutral"
+                    dataKey="neutralPctHalf"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-gray-300 dark:fill-gray-700"
+                  />
+                ) : null}
+                {journeyNormalize ? (
+                  <Bar
+                    key="norm-pos"
+                    dataKey="positivePct"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-green-500"
+                  />
+                ) : null}
+
+                {!journeyNormalize ? (
+                  <Bar
+                    key="raw-pos"
+                    dataKey="positiveCount"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-green-500"
+                  />
+                ) : null}
+                {!journeyNormalize ? (
+                  <Bar
+                    key="raw-neg"
+                    dataKey="negativeDisplay"
+                    stackId="totals"
+                    radius={0}
+                    className="fill-red-500"
+                  />
+                ) : null}
               </BarChart>
             </ChartContainer>
           </div>
@@ -869,20 +1257,32 @@ export default function EngagementHubPage() {
           <div className="flex items-center justify-between gap-3 px-6 py-4">
             <div className="text-base font-semibold font-psv-branding">PLAYER REPORT</div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-              >
-                <Filter className="h-4 w-4" />
-                <span>Filter</span>
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-              >
-                <ArrowUpDown className="h-4 w-4" />
-                <span>Sort</span>
-              </button>
+              <Select value={playerPositionFilter} onValueChange={setPlayerPositionFilter}>
+                <SelectTrigger className="h-9 w-auto gap-2 border-border bg-background px-3 text-sm text-foreground hover:bg-accent focus:ring-0 shadow-none">
+                  <Filter className="h-4 w-4" />
+                  <SelectValue placeholder="Filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Positions</SelectItem>
+                  <SelectItem value="gk">Goalkeepers</SelectItem>
+                  <SelectItem value="def">Defenders</SelectItem>
+                  <SelectItem value="mid">Midfielders</SelectItem>
+                  <SelectItem value="att">Attackers</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={playerSortCol} onValueChange={(v) => setPlayerSortCol(v as any)}>
+                <SelectTrigger className="h-9 w-auto gap-2 border-border bg-background px-3 text-sm text-foreground hover:bg-accent focus:ring-0 shadow-none">
+                  <ArrowUpDown className="h-4 w-4" />
+                  <SelectValue placeholder="Sort" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mentions">Mentions</SelectItem>
+                  <SelectItem value="positivePct">Sentiment %</SelectItem>
+                  <SelectItem value="avgRating">Avg Rating</SelectItem>
+                  <SelectItem value="marketValue">Market Value</SelectItem>
+                </SelectContent>
+              </Select>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>
@@ -928,122 +1328,28 @@ export default function EngagementHubPage() {
                 </tr>
               </thead>
               <tbody>
-                {(
-                  [
-                    {
-                      rank: 1,
-                      player: "Guus Til",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 1840,
-                      avgSentiment: 62,
-                      avgPerformance: 8.6,
-                      marketValue: "€32.5M",
-                    },
-                    {
-                      rank: 2,
-                      player: "Armando Obispo",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 1290,
-                      avgSentiment: 41,
-                      avgPerformance: 5.8,
-                      marketValue: "€7.0M",
-                    },
-                    {
-                      rank: 3,
-                      player: "Johan Bakayoko",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 980,
-                      avgSentiment: 57,
-                      avgPerformance: 7.7,
-                      marketValue: "€45.0M",
-                    },
-                    {
-                      rank: 4,
-                      player: "Joey Veerman",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 860,
-                      avgSentiment: 49,
-                      avgPerformance: 7.3,
-                      marketValue: "€28.0M",
-                    },
-                    {
-                      rank: 5,
-                      player: "Luuk de Jong",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 820,
-                      avgSentiment: 55,
-                      avgPerformance: 7.1,
-                      marketValue: "€4.0M",
-                    },
-                    {
-                      rank: 6,
-                      player: "Noa Lang",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 780,
-                      avgSentiment: 46,
-                      avgPerformance: 6.9,
-                      marketValue: "€25.0M",
-                    },
-                    {
-                      rank: 7,
-                      player: "Walter Benítez",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 720,
-                      avgSentiment: 52,
-                      avgPerformance: 7.0,
-                      marketValue: "€9.0M",
-                    },
-                    {
-                      rank: 8,
-                      player: "Olivier Boscagli",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 690,
-                      avgSentiment: 50,
-                      avgPerformance: 6.8,
-                      marketValue: "€15.0M",
-                    },
-                    {
-                      rank: 9,
-                      player: "Ismael Saibari",
-                      playerImageSrc: "/player_images/20.png",
-                      mentions: 640,
-                      avgSentiment: 53,
-                      avgPerformance: 6.7,
-                      marketValue: "€20.0M",
-                    },
-                    {
-                      rank: 10,
-                      player: "Sergiño Dest",
-                      playerImageSrc: "/player_images/4.png",
-                      mentions: 610,
-                      avgSentiment: 47,
-                      avgPerformance: 6.6,
-                      marketValue: "€16.0M",
-                    },
-                  ] as const
-                ).map((row, index) => (
-                  <tr key={row.rank} className={cn(index % 2 === 0 ? "bg-background" : "bg-muted", "h-8")}>
+                {sortedAndFilteredPlayers.map((row, index) => (
+                  <tr key={row.name} className={cn(index % 2 === 0 ? "bg-background" : "bg-muted", "h-8")}>
                     <td className="px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="h-full px-3">
                       <div className="flex h-full items-center gap-2">
                         <div className="pt-1 self-end">
-                          <Image
-                            src={row.playerImageSrc}
-                            alt={row.player}
-                            width={96}
-                            height={192}
-                            className="h-6 w-auto object-contain object-bottom"
-                          />
+                            <PlayerImage shirtNumber={row.shirtNumber} name={row.name} />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate">{row.player}</div>
+                          <div className="truncate">{row.name}</div>
+                          <div className="text-xs text-muted-foreground">{row.position}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{row.mentions.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.avgSentiment}%</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.avgPerformance.toFixed(1)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.marketValue}</td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums">{Math.floor(row.mentions).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.mentions > 0 ? `${row.positivePct.toFixed(0)}%` : "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                       <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium text-white", getRatingBadgeClass(row.avgRating || 0))}>
+                           {row.avgRating ? row.avgRating.toFixed(1) : "-"}
+                       </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatMarketValue(row.marketValue)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1061,24 +1367,7 @@ export default function EngagementHubPage() {
           </div>
 
           <div className="px-6 pb-5 space-y-3">
-            {([
-              {
-                firstName: "Guus",
-                lastName: "Til",
-                imageSrc: "/player_images/20.png",
-                marketValue: "€9m",
-                sentimentLabel: "70% positive",
-                sentimentVariant: "positive" as const,
-              },
-              {
-                firstName: "Johan",
-                lastName: "Bakayoko",
-                imageSrc: "/player_images/4.png",
-                marketValue: "€20m",
-                sentimentLabel: "65% negative",
-                sentimentVariant: "negative" as const,
-              },
-            ] as const).map((player) => {
+            {sentimentVsValuePlayers.map((player) => {
               const isPositive = player.sentimentVariant === "positive"
               return (
                 <div key={player.lastName} className="rounded-xl bg-muted p-3 pb-0">
@@ -1116,7 +1405,7 @@ export default function EngagementHubPage() {
                           <span className="text-muted-foreground">Sentiment:</span>
                           <span
                             className={cn(
-                              "inline-flex items-center rounded-md px-2 py-0.5 text-sm font-semibold",
+                              "inline-flex text-nowrap items-center rounded-md px-2 py-0.5 text-sm font-semibold",
                               isPositive ? "bg-green-500/20 text-green-700" : "bg-red-500/20 text-red-700"
                             )}
                           >
@@ -1217,21 +1506,8 @@ export default function EngagementHubPage() {
                 </tr>
               </thead>
               <tbody>
-                {(
-                  [
-                    { rank: 1, topic: "Referee decision in the second half", mentions: 1240 },
-                    { rank: 2, topic: "Tactical change after halftime", mentions: 980 },
-                    { rank: 3, topic: "Performance of the midfield trio", mentions: 860 },
-                    { rank: 4, topic: "Injury update and squad depth", mentions: 740 },
-                    { rank: 5, topic: "VAR check and offside call", mentions: 690 },
-                    { rank: 6, topic: "Substitution impact late in the game", mentions: 640 },
-                    { rank: 7, topic: "Goalkeeper distribution and build-up play", mentions: 610 },
-                    { rank: 8, topic: "Set-piece defending and marking", mentions: 580 },
-                    { rank: 9, topic: "Atmosphere in the stadium", mentions: 540 },
-                    { rank: 10, topic: "Post-match interview highlights", mentions: 510 },
-                  ] as const
-                ).map((row, index) => (
-                  <tr key={row.rank} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
+                {(overview?.hotTopics || []).map((row, index) => (
+                  <tr key={index} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
                     <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="px-3 py-2">
                       <div className="truncate">{row.topic}</div>

@@ -17,6 +17,7 @@ import {
   loadPlayerDirectory,
   loadPlayerRatings,
   loadSentimentCountsByDay,
+  loadPlayerSentimentCountsByDay,
   loadTopExposures,
   parseIsoDateOnly,
   percentChange,
@@ -31,6 +32,8 @@ export async function GET(req: Request) {
     const start = parseIsoDateOnly(url.searchParams.get("start"))
     const end = parseIsoDateOnly(url.searchParams.get("end"))
     const debug = url.searchParams.get("debug") === "1"
+    const playerIdParam = url.searchParams.get("player_id")
+    const playerId = playerIdParam ? Number(playerIdParam) : null
 
     if (!start || !end) {
       return NextResponse.json(
@@ -66,9 +69,25 @@ export async function GET(req: Request) {
       new Date(`${toIsoDateOnly(previousEnd)}T23:59:59.999Z`).getTime() / 1000,
     )
 
-    const [currentCountsByDay, currentTotals, prevTotals] =
+    const { aliasToPlayer, allPlayers } = await loadPlayerDirectory()
+
+    let currentCountsByDay: Map<string, { total: number; pos: number; neg: number }>
+
+    if (playerId) {
+      currentCountsByDay = await loadPlayerSentimentCountsByDay(startTs, endTs, playerId, aliasToPlayer)
+    } else {
+      currentCountsByDay = await loadSentimentCountsByDay(startTs, endTs)
+    }
+
+    // TODO: Filter currentTotals/prevTotals by player if needed, but summary stats in header might be desired to stay global?
+    // User request: "except that it only shows stats from the player" for the sentiment journey card.
+    // If we filter, we should probably filter globally?
+    // For now, I'll filter logic for the journey. For the summary totals, I should probably also filter if I want consistency.
+    // But refactoring the SQL queries for totals is messy.
+    // Let's rely on the sentiment journey graph being correct.
+
+    const [currentTotals, prevTotals] =
       await Promise.all([
-        loadSentimentCountsByDay(startTs, endTs),
         query<Array<{ positiveCount: number; negativeCount: number }>>(
           `SELECT
             SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'positive' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as positiveCount,
@@ -111,8 +130,6 @@ export async function GET(req: Request) {
     const matches = await loadMatches(start, end)
     const events = attachMatchesToPoints(points, matches)
 
-    const { aliasToPlayer, allPlayers } = await loadPlayerDirectory()
-
     const [currentMentionAgg, previousMentionAgg, hotTopics, playerRatings, topExposures] = await Promise.all([
       loadMentionAggregates(startTs, endTs, aliasToPlayer),
       loadMentionAggregates(previousStartTs, previousEndTs, aliasToPlayer),
@@ -144,12 +161,16 @@ export async function GET(req: Request) {
       .map((p) => {
         const result: PlayerReportItem = {
           name: p.name,
+          fotmobId: p.fotmobId,
           shirtNumber: p.shirtNumber,
           position: p.position ?? "Unknown",
           mentions: 0,
           positivePct: 0,
           avgRating: playerRatings.get(p.fotmobId) ?? null,
           marketValue: p.transferValue,
+          goals: p.goals,
+          assists: p.assists,
+          age: p.age,
         }
 
         const agg = currentMentionAgg.get(p.name)

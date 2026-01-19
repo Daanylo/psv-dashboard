@@ -952,14 +952,6 @@ export default function HomePage() {
               />
               <span>Normalize</span>
             </label>
-
-            <button
-              type="button"
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-            >
-              <ArrowRight className="h-4 w-4" />
-              <span>More</span>
-            </button>
           </div>
         </div>
 
@@ -1516,8 +1508,10 @@ export default function HomePage() {
                     <td className="px-3 py-2 text-right font-medium tabular-nums">
                       {row.mentions > 0 ? `${row.positivePct.toFixed(0)}%` : "—"}
                     </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">
-                      {row.avgRating ? row.avgRating.toFixed(1) : "—"}
+                    <td className="px-3 py-2 text-right tabular-nums">
+                        <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium text-white", getRatingBadgeClass(row.avgRating || 0))}>
+                           {row.avgRating ? row.avgRating.toFixed(1) : "-"}
+                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-medium tabular-nums">
                       {formatMarketValue(row.marketValue)}

@@ -440,7 +440,64 @@ export default function SponsorsReportPage() {
         const node = mainRef.current
         const width = node.scrollWidth
         const height = node.scrollHeight
-        
+
+        // Pre-process images: force eager loading and inline as base64 to prevent duplication/missing issues
+        const images = Array.from(node.querySelectorAll("img"))
+        const imageRestoreFns: (() => void)[] = []
+
+        await Promise.all(images.map(async (img) => {
+            try {
+                if (img.loading !== "eager") img.loading = "eager"
+                
+                // Ensure loaded
+                if (!img.complete) {
+                    await new Promise((resolve) => {
+                        img.onload = resolve
+                        img.onerror = resolve
+                    })
+                }
+
+                // Inline as Data URL
+                const currentSrc = img.currentSrc || img.src
+                if (currentSrc && !currentSrc.startsWith("data:")) {
+                    // Fetch the image data
+                    const response = await fetch(currentSrc)
+                    const blob = await response.blob()
+                    
+                    const base64 = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader()
+                        reader.onloadend = () => {
+                            if (typeof reader.result === "string") resolve(reader.result)
+                            else reject(new Error("Failed to convert image to base64"))
+                        }
+                        reader.onerror = reject
+                        reader.readAsDataURL(blob)
+                    })
+
+                    // Save original state
+                    const prevSrc = img.getAttribute("src")
+                    const prevSrcSet = img.getAttribute("srcset")
+
+                    // Apply base64
+                    img.src = base64
+                    img.removeAttribute("srcset")
+
+                    // Queue restoration
+                    imageRestoreFns.push(() => {
+                        if (prevSrc) img.setAttribute("src", prevSrc)
+                        else img.removeAttribute("src")
+                        
+                        if (prevSrcSet) img.setAttribute("srcset", prevSrcSet)
+                    })
+                }
+            } catch (e) {
+                console.warn("Failed to inline image for export", e)
+            }
+        }))
+
+        // Small buffer for DOM updates
+        await new Promise(r => setTimeout(r, 100))
+
         const dataUrl = await toPng(node, { 
             cacheBust: true, // Re-enable cache busting to avoid potential Next.js image timeouts
             pixelRatio: 2,
@@ -451,9 +508,15 @@ export default function SponsorsReportPage() {
             style: {
                 height: 'auto',
                 overflow: 'visible',
-                maxHeight: 'none'
+                maxHeight: 'none',
+                margin: '0',
+                maxWidth: 'none',
+                width: `${width}px`
             }
         })
+
+        // Restore images to original state
+        imageRestoreFns.forEach(restore => restore())
         
         const pdf = new jsPDF({
             orientation: width > height ? "landscape" : "portrait",

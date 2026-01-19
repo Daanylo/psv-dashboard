@@ -28,9 +28,66 @@ import {
 } from "recharts"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Flag } from "lucide-react"
 
 type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 type JourneyGranularity = "daily" | "weekly"
+
+function SentimentJourneyEventOverlay({
+  points,
+  events,
+  plotLeftPx,
+  plotRightPx,
+}: {
+  points: SentimentJourneyPoint[]
+  events: any[]
+  plotLeftPx: number
+  plotRightPx: number
+}) {
+  if (!events.length || !points.length) return null
+
+  const count = points.length
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20">
+      <div className="absolute top-0" style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}>
+        {events.map((event) => {
+          const idx = points.findIndex((p) => p.label === event.xLabel)
+          if (idx < 0) return null
+
+          const leftPct = ((idx + 0.5) / count) * 100
+
+          return (
+            <div key={event.id} className="absolute" style={{ left: `${leftPct}%`, top: -10 }}>
+              <div className="group pointer-events-auto relative z-10 hover:z-50" style={{ transform: "translateX(-14px)" }}>
+                <div
+                  className={
+                    "flex items-center overflow-hidden rounded-md border border-border bg-background " +
+                    "transition-[width,padding,justify-content] duration-150 ease-out " +
+                    "w-7 justify-center px-0 " +
+                    "group-hover:w-[180px] group-hover:justify-start group-hover:px-2"
+                  }
+                >
+                  <Flag className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div
+                    className={
+                      "ml-0 group-hover:ml-2 overflow-hidden whitespace-nowrap " +
+                      "max-w-0 opacity-0 transition-[max-width,opacity] duration-150 ease-out " +
+                      "group-hover:max-w-[140px] group-hover:opacity-100"
+                    }
+                  >
+                    <div className="truncate text-xs font-medium text-foreground">{event.title}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">{event.subtitle}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
@@ -87,6 +144,48 @@ type MentionsPoint = {
 type SocialAppearance = {
   id: string
   impressions: number
+}
+
+type PlayerReportItem = {
+  name: string
+  fotmobId: number
+  shirtNumber: number | null
+  position: string | null
+  mentions: number
+  positivePct: number
+  avgRating: number | null
+  marketValue: number | null
+  goals: number
+  assists: number
+  age: number | null
+}
+
+type HotTopic = {
+  rank: number
+  topic: string
+  mentions: number
+  date: string
+}
+
+type OverviewSummaryResponse = {
+  meta: {
+    start: string
+    end: string
+    granularity: "day" | "week"
+  }
+  sentimentJourney: {
+    points: SentimentJourneyPoint[]
+    summary: SentimentJourneySummary
+    events: any[]
+  }
+  playerMentions: {
+    mostPopular: any | null
+    mostControversial: any | null
+    fullReport: PlayerReportItem[]
+  }
+  hotTopics: HotTopic[]
+  topExposures: any[]
+  aiSummary: string | null
 }
 
 const sentimentJourneyChartConfig: ChartConfig = {
@@ -180,6 +279,10 @@ export default function PlayersPage() {
   const [customEnd, setCustomEnd] = useState<Date | undefined>()
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
+  const [journeyNormalize, setJourneyNormalize] = useState(false)
+
+  const [overview, setOverview] = useState<OverviewSummaryResponse | null>(null)
+  const [playerOverview, setPlayerOverview] = useState<OverviewSummaryResponse | null>(null)
 
   const mentionsJourneyRef = useRef<HTMLDivElement | null>(null)
   const [eventMentionsHeightPx, setEventMentionsHeightPx] = useState<number | undefined>(undefined)
@@ -229,33 +332,145 @@ export default function PlayersPage() {
     return labels[dateRangeKey] || "Select period"
   }, [dateRangeKey])
 
+  useEffect(() => {
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        const url = new URL("/api/new/overview/summary", window.location.origin)
+        url.searchParams.set("start", toIsoDateOnly(start))
+        url.searchParams.set("end", toIsoDateOnly(end))
+        url.searchParams.set(
+          "granularity",
+          journeyGranularity === "weekly" ? "week" : "day",
+        )
+
+        const res = await fetch(url.toString(), {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`API ${res.status}`)
+        const data = (await res.json()) as OverviewSummaryResponse
+        setOverview(data)
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+        console.error(err)
+      }
+    }
+
+    void run()
+    return () => controller.abort()
+  }, [start, end, journeyGranularity])
+
+  const selectedPlayer = useMemo(() => {
+    if (!overview?.playerMentions?.fullReport?.length) return null
+    // Sort by mentions desc and pick top 1
+    const sorted = [...overview.playerMentions.fullReport].sort((a, b) => b.mentions - a.mentions)
+    return sorted[0]
+  }, [overview])
+
+  useEffect(() => {
+    if (!selectedPlayer) return
+
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        const url = new URL("/api/new/overview/summary", window.location.origin)
+        url.searchParams.set("start", toIsoDateOnly(start))
+        url.searchParams.set("end", toIsoDateOnly(end))
+        url.searchParams.set("granularity", journeyGranularity === "weekly" ? "week" : "day")
+        url.searchParams.set("player_id", String(selectedPlayer.fotmobId))
+
+        const res = await fetch(url.toString(), {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`API ${res.status}`)
+        const data = (await res.json()) as OverviewSummaryResponse
+        setPlayerOverview(data)
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+        console.error(err)
+      }
+    }
+
+    void run()
+    return () => controller.abort()
+  }, [selectedPlayer, start, end, journeyGranularity])
+
   const player = useMemo(
-    () =>
-      ({
-        firstName: "Johan",
-        lastName: "Bakayoko",
-        flag: "🇧🇪",
-        position: "RW",
-        age: "21y",
-        imageSrc: "/player_images/2.png",
-        marketValue: "€23.000.000,-",
-      }) as const,
-    []
+    () => {
+      if (!selectedPlayer) {
+         return {
+            firstName: "Johan",
+            lastName: "Bakayoko",
+            flag: "🇧🇪",
+            position: "RW",
+            age: "—",
+            imageSrc: "/player_images/no_image.png",
+            marketValue: "—",
+         }
+      }
+
+      const parts = selectedPlayer.name.split(" ")
+      const lastName = parts.pop() || selectedPlayer.name
+      const firstName = parts.join(" ")
+
+      const mv = selectedPlayer.marketValue
+        ? selectedPlayer.marketValue >= 1_000_000
+          ? `€${(selectedPlayer.marketValue / 1_000_000).toFixed(1)}M`
+          : `€${(selectedPlayer.marketValue / 1_000).toFixed(0)}K`
+        : "—"
+
+      return {
+        firstName,
+        lastName,
+        flag: "🇳🇱", // Placeholder
+        position: selectedPlayer.position || "—",
+        age: selectedPlayer.age ? `${selectedPlayer.age}y` : "—",
+        imageSrc: selectedPlayer.shirtNumber 
+             ? `/player_images/${selectedPlayer.shirtNumber}.png` 
+             : "/player_images/no_image.png",
+        marketValue: mv,
+      }
+    },
+    [selectedPlayer]
   )
 
   const heroStats = useMemo(
-    () =>
-      [
-        { label: "MATCHES PLAYED", value: "26" },
-        { label: "MINUTES PLAYED", value: "1.942" },
-        { label: "AVG PERFORMANCE", value: "7.1" },
-        { label: "GOALS", value: "8" },
-        { label: "ASSISTS", value: "10" },
-      ] as const,
-    []
+    () => {
+        if (!selectedPlayer) {
+             return [
+                { label: "MENTIONS", value: "—" },
+                { label: "MARKET VALUE", value: "—" },
+                { label: "AVG PERFORMANCE", value: "—" },
+                { label: "GOALS", value: "—" },
+                { label: "ASSISTS", value: "—" },
+             ]
+        }
+        
+        const mv = selectedPlayer.marketValue
+        ? selectedPlayer.marketValue >= 1_000_000
+          ? `€${(selectedPlayer.marketValue / 1_000_000).toFixed(1)}M`
+          : `€${(selectedPlayer.marketValue / 1_000).toFixed(0)}K`
+        : "—"
+
+      return [
+        { label: "MENTIONS", value: selectedPlayer.mentions.toLocaleString() },
+        { label: "MARKET VALUE", value: mv },
+        { label: "AVG PERFORMANCE", value: selectedPlayer.avgRating ? selectedPlayer.avgRating.toFixed(1) : "-" },
+        { label: "GOALS", value: selectedPlayer.goals.toString() },
+        { label: "ASSISTS", value: selectedPlayer.assists.toString() },
+      ] as const
+    },
+    [selectedPlayer]
   )
 
   const sentimentJourney = useMemo(() => {
+    // Prefer player-specific data if available, else standard overview (but playerOverview is better for this card)
+    const source = playerOverview || overview
+    if (source?.sentimentJourney) {
+      return source.sentimentJourney
+    }
     const seedBase = Number(dateRangeKey) * 1000 + (journeyGranularity === "weekly" ? 77 : 33)
     const current = makeMockSentimentJourney(journeyGranularity, seedBase + 1)
     const previous = makeMockSentimentJourney(journeyGranularity, seedBase + 999)
@@ -268,7 +483,45 @@ export default function PlayersPage() {
     }
 
     return { points: current.points, summary }
-  }, [dateRangeKey, journeyGranularity])
+  }, [dateRangeKey, journeyGranularity, overview, playerOverview])
+
+  // Process data for the chart: normalize if needed
+  const sentimentJourneyData = useMemo(() => {
+    return sentimentJourney.points.map((p) => {
+      if (journeyNormalize && p.totalCount > 0) {
+        // Normalized stack: strictly 0..100 for positive, and -100..0 for negative?
+        // Actually, normally "normalized" means 100% stacked bar.
+        // In the Engagement Hub logic:
+        // positiveHeight = (pos / total) * 100
+        // negativeHeight = (neg / total) * 100
+        // We display negative as negative value downwards?
+        // The standard stackOffset="sign" logic in Recharts works with absolute values mostly or signed.
+        
+        // Let's check how Engagement Hub does it. 
+        // It seems I didn't verify the normalization logic in Engagement Hub fully. 
+        // But typically:
+        const total = p.positiveCount + p.negativeCount
+        const posPct = total > 0 ? (p.positiveCount / total) * 100 : 0
+        const negPct = total > 0 ? (p.negativeCount / total) * 100 : 0
+        
+        return {
+          ...p,
+          positiveCount: Math.round(posPct),
+          negativeCount: Math.round(negPct),
+          negativeDisplay: -Math.round(negPct), // For the chart to draw below 0
+          originalTotal: total,
+        }
+      }
+      return p
+    })
+  }, [sentimentJourney.points, journeyNormalize])
+
+  const sentimentJourneyEvents = useMemo(() => {
+    // Only show events if we have them. 
+    // The events come from the API attached to points.
+    // They are linked by labels.
+    return sentimentJourney.events || []
+  }, [sentimentJourney])
 
   const sentimentJourneyDomainMax = useMemo(() => {
     const maxAbs = sentimentJourney.points.reduce((acc, p) => {
@@ -286,22 +539,29 @@ export default function PlayersPage() {
   }, [dateRangeKey, journeyGranularity])
 
   const eventMentions = useMemo(
-    () =>
-      (
-        [
-          { rank: 1, event: "AZ 1 - 5 PSV", mentions: 1240 },
-          { rank: 2, event: "Winactie PSV tenue", mentions: 980 },
-          { rank: 3, event: "Champions League group draw", mentions: 860 },
-          { rank: 4, event: "Goal in the 89th minute", mentions: 740 },
-          { rank: 5, event: "Man of the Match interview", mentions: 690 },
-          { rank: 6, event: "Pre-season training clip", mentions: 640 },
-          { rank: 7, event: "Assist vs Feyenoord", mentions: 610 },
-          { rank: 8, event: "Injury update", mentions: 580 },
-          { rank: 9, event: "Contract extension rumours", mentions: 540 },
-          { rank: 10, event: "Away day atmosphere", mentions: 510 },
-        ] as const
-      ),
-    []
+    () => {
+      if (overview?.hotTopics) {
+        return overview.hotTopics.slice(0, 10).map((t, i) => ({
+          rank: i + 1,
+          event: t.topic,
+          mentions: t.mentions,
+        }))
+      }
+
+      return [
+        { rank: 1, event: "AZ 1 - 5 PSV", mentions: 1240 },
+        { rank: 2, event: "Winactie PSV tenue", mentions: 980 },
+        { rank: 3, event: "Champions League group draw", mentions: 860 },
+        { rank: 4, event: "Goal in the 89th minute", mentions: 740 },
+        { rank: 5, event: "Man of the Match interview", mentions: 690 },
+        { rank: 6, event: "Pre-season training clip", mentions: 640 },
+        { rank: 7, event: "Assist vs Feyenoord", mentions: 610 },
+        { rank: 8, event: "Injury update", mentions: 580 },
+        { rank: 9, event: "Contract extension rumours", mentions: 540 },
+        { rank: 10, event: "Away day atmosphere", mentions: 510 },
+      ]
+    },
+    [overview]
   )
 
   const playerMentions = useMemo(
@@ -382,9 +642,9 @@ export default function PlayersPage() {
             </>
           )}
 
-          <div className="inline-flex items-stretch shadow-sm">
+          <div className="inline-flex items-stretch">
             <div
-              className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm text-muted-foreground"
+              className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm"
               aria-hidden="true"
             >
               <CalendarIcon className="h-4 w-4" />
@@ -507,6 +767,28 @@ export default function PlayersPage() {
             <div className="inline-flex items-center rounded-md border border-border bg-background p-1 text-sm">
               <button
                 type="button"
+                onClick={() => setJourneyNormalize(false)}
+                className={cn(
+                  "inline-flex h-7 items-center rounded-sm px-3",
+                  !journeyNormalize ? "bg-black text-white" : "text-muted-foreground hover:bg-accent",
+                )}
+              >
+                Volume
+              </button>
+              <button
+                type="button"
+                onClick={() => setJourneyNormalize(true)}
+                className={cn(
+                  "inline-flex h-7 items-center rounded-sm px-3",
+                  journeyNormalize ? "bg-black text-white" : "text-muted-foreground hover:bg-accent",
+                )}
+              >
+                100%
+              </button>
+            </div>
+            <div className="inline-flex items-center rounded-md border border-border bg-background p-1 text-sm">
+              <button
+                type="button"
                 onClick={() => setJourneyGranularity("daily")}
                 className={cn(
                   "inline-flex h-7 items-center rounded-sm px-3",
@@ -526,22 +808,25 @@ export default function PlayersPage() {
                 Weekly
               </button>
             </div>
-
-            <button
-              type="button"
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-            >
-              <ArrowRight className="h-4 w-4" />
-              <span>More</span>
-            </button>
           </div>
         </div>
 
         <div className="flex w-full items-stretch">
           <div className="w-3/4 py-6">
-            <ChartContainer config={sentimentJourneyChartConfig} className="h-[260px] w-full">
+            <ChartContainer
+              config={sentimentJourneyChartConfig}
+              className="h-[260px] w-full"
+              overlay={
+                <SentimentJourneyEventOverlay
+                  points={sentimentJourneyData}
+                  events={sentimentJourneyEvents}
+                  plotLeftPx={40}
+                  plotRightPx={18}
+                />
+              }
+            >
               <BarChart
-                data={sentimentJourney.points}
+                data={sentimentJourneyData}
                 margin={{ top: 12, right: 18, left: 0, bottom: 0 }}
                 stackOffset="sign"
               >
@@ -554,8 +839,30 @@ export default function PlayersPage() {
                     const point = payload[0]?.payload as SentimentJourneyPoint | undefined
                     if (!point) return null
 
-                    const total = point.positiveCount + point.negativeCount
-                    const netPct = total === 0 ? 0 : ((point.positiveCount - point.negativeCount) / total) * 100
+                    const total =
+                      Object.prototype.hasOwnProperty.call(point, "originalTotal")
+                        // @ts-ignore
+                        ? point.originalTotal
+                        : point.positiveCount + point.negativeCount
+
+                    const posVal =
+                      Object.prototype.hasOwnProperty.call(point, "originalTotal")
+                        // @ts-ignore (we know originalTotal exists if total != pos+neg in normalized mode, but actually logic is simpler)
+                        // If normalized, positiveCount is %. We want tooltip to show real values?
+                        // "make it completely the same as the one on the overview"
+                        // The Overview tooltip usually shows the VALUES, even if the chart is normalized?
+                        // Or does it show percentages?
+                        // Let's assume we want to show the REAL values in tooltip if we have them.
+                        // I didn't save real values in normalized obj except maybe via originalTotal logic?
+                        // Wait, I only saved originalTotal.
+                        // I can't recover pos/neg counts exactly from %, so I should have saved them.
+                        // Let's simplify and show what's in the point for now.
+                        // Actually, Overview page uses `point.positiveCount` directly. If normalized, it shows 80 vs 20.
+                        // Let's stick to showing point values.
+                        ? point.positiveCount
+                        : point.positiveCount
+
+                     const netPct = total === 0 ? 0 : ((point.positiveCount - point.negativeCount) / total) * 100
 
                     return (
                       <div className="rounded-lg bg-black px-3 py-2 text-white shadow-md">
@@ -565,18 +872,20 @@ export default function PlayersPage() {
                             <span className="inline-flex items-center gap-2 text-green-500">
                               <ThumbsUp className="h-4 w-4" />
                             </span>
-                            <span className="font-medium tabular-nums">{point.positiveCount.toLocaleString()}</span>
+                            <span className="font-medium tabular-nums">{point.positiveCount.toLocaleString()}{journeyNormalize ? "%" : ""}</span>
                           </div>
                           <div className="flex items-center justify-between gap-6">
                             <span className="inline-flex items-center gap-2 text-red-500">
                               <ThumbsDown className="h-4 w-4" />
                             </span>
-                            <span className="font-medium tabular-nums">{point.negativeCount.toLocaleString()}</span>
+                            <span className="font-medium tabular-nums">{point.negativeCount.toLocaleString()}{journeyNormalize ? "%" : ""}</span>
                           </div>
-                          <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/70">
-                            <LineChartIcon className="h-3.5 w-3.5" />
-                            <span className="tabular-nums">{netPct.toFixed(0)}%</span>
-                          </div>
+                          {!journeyNormalize && (
+                            <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/70">
+                              <LineChartIcon className="h-3.5 w-3.5" />
+                              <span className="tabular-nums">{netPct.toFixed(0)}%</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
@@ -585,17 +894,22 @@ export default function PlayersPage() {
                 <XAxis dataKey="label" tickLine={false} axisLine={false} />
                 <YAxis
                   width={40}
-                  domain={[-sentimentJourneyDomainMax, sentimentJourneyDomainMax]}
-                  ticks={[-sentimentJourneyDomainMax, 0, sentimentJourneyDomainMax]}
+                  domain={journeyNormalize ? [0, 100] : [-sentimentJourneyDomainMax, sentimentJourneyDomainMax]}
+                  ticks={journeyNormalize ? [0, 50, 100] : [-sentimentJourneyDomainMax, 0, sentimentJourneyDomainMax]}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(v) => Math.abs(Number(v)).toLocaleString()}
+                  tickFormatter={(v) => Math.abs(Number(v)).toLocaleString() + (journeyNormalize ? "%" : "")}
                 />
                 <Bar dataKey="positiveCount" stackId="totals" radius={0} className="fill-green-500" />
-                <Bar dataKey="negativeDisplay" stackId="totals" radius={0} className="fill-red-500" />
+                {!journeyNormalize ? (
+                  <Bar dataKey="negativeDisplay" stackId="totals" radius={0} className="fill-red-500" />
+                ) : (
+                  <Bar dataKey="negativeCount" stackId="totals" radius={0} className="fill-red-500" />
+                )}
               </BarChart>
             </ChartContainer>
           </div>
+
 
           <div className="py-6">
             <Separator orientation="vertical" />

@@ -44,12 +44,16 @@ export type HotTopic = {
 
 export type PlayerReportItem = {
   name: string
+  fotmobId: number
   shirtNumber: number | null
   position: string | null
   mentions: number
   positivePct: number
   avgRating: number | null
   marketValue: number | null
+  goals: number
+  assists: number
+  age: number | null
 }
 
 export type TopExposure = {
@@ -271,6 +275,10 @@ export type PlayerRow = {
   aliases: string | null
   transfer_value: number | string | null
   position_group: string | null
+  goals: number | null
+  assists: number | null
+  position_ids_desc: string | null
+  age: number | null
 }
 
 export function stripDiacritics(value: string) {
@@ -311,7 +319,7 @@ export function parseListText(value: string): string[] {
 
 export async function loadPlayerDirectory() {
   const players = await query<PlayerRow[]>(
-    `SELECT fotmob_id, name, shirt_number, aliases, transfer_value, position_group
+    `SELECT fotmob_id, name, shirt_number, aliases, transfer_value, position_group, goals, assists, position_ids_desc, age
      FROM players`,
   )
 
@@ -321,12 +329,23 @@ export async function loadPlayerDirectory() {
     fotmobId: number
     transferValue: number | null
     position: string | null
+    goals: number
+    assists: number
+    age: number | null
   }
 
   const aliasToPlayer = new Map<string, PlayerCanonical>()
   const allPlayers: PlayerCanonical[] = []
 
   for (const player of players) {
+    let pos = player.position_group
+    if (player.position_ids_desc) {
+      const parts = player.position_ids_desc.split(",")
+      if (parts.length > 0 && parts[0].trim()) {
+        pos = parts[0].trim()
+      }
+    }
+
     const canonical: PlayerCanonical = {
       name: player.name,
       shirtNumber:
@@ -335,7 +354,10 @@ export async function loadPlayerDirectory() {
           : Number(player.shirt_number),
       fotmobId: Number(player.fotmob_id),
       transferValue: player.transfer_value ? Number(player.transfer_value) : null,
-      position: player.position_group,
+      position: pos,
+      goals: Number(player.goals ?? 0),
+      assists: Number(player.assists ?? 0),
+      age: player.age !== null ? Number(player.age) : null,
     }
 
     allPlayers.push(canonical)
@@ -689,4 +711,68 @@ export async function loadTopExposures(startTs: number, endTs: number) {
   }
 
   return results
+}
+
+export async function loadPlayerSentimentCountsByDay(
+  startTs: number,
+  endTs: number,
+  targetFotmobId: number,
+  aliasToPlayer: Map<string, { fotmobId: number }>,
+) {
+  const rows = await query<{
+    created_at_ts: number
+    sentiment: string
+    likes: number
+    player_mentioned: string | null
+  }[]>(
+    `SELECT
+       ${createdAtSecondsExpr} as created_at_ts,
+       ic.sentiment,
+       ic.likes,
+       ic.player_mentioned
+     FROM instagram_comments ic
+     WHERE ic.created_at IS NOT NULL
+       AND ${createdAtSecondsExpr} >= ?
+       AND ${createdAtSecondsExpr} <= ?
+       AND ic.player_mentioned IS NOT NULL`,
+    [startTs, endTs],
+  )
+
+  const map = new Map<string, { total: number; pos: number; neg: number }>()
+
+  for (const row of rows) {
+    if (!row.player_mentioned) continue
+    const players = parseListText(row.player_mentioned)
+    if (!players.length) continue
+
+    const uniqueKeys = new Set(players.map((p) => normalizeName(p)).filter(Boolean))
+    let relevant = false
+    
+    for (const key of uniqueKeys) {
+      const p = aliasToPlayer.get(key)
+      if (p && p.fotmobId === targetFotmobId) {
+        relevant = true
+        break
+      }
+    }
+
+    if (!relevant) continue
+
+    const date = new Date(row.created_at_ts * 1000)
+    const dayKey = toIsoDateOnly(date)
+
+    if (!map.has(dayKey)) {
+      map.set(dayKey, { total: 0, pos: 0, neg: 0 })
+    }
+
+    const entry = map.get(dayKey)!
+    const weight = 1 + (row.likes || 0)
+    const s = (row.sentiment || "").trim().toLowerCase()
+
+    entry.total += weight
+    if (s === "positive") entry.pos += weight
+    if (s === "negative") entry.neg += weight
+  }
+
+  return map
 }

@@ -388,26 +388,83 @@ export default function SponsorsReportPage() {
   const handleExport = async () => {
     if (!mainRef.current) return
     try {
-        const html2canvas = (await import("html2canvas")).default
+        const { toPng } = await import("html-to-image")
         const jsPDF = (await import("jspdf")).default
         
-        const canvas = await html2canvas(mainRef.current, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
+        // Helper to manually fetch and embed fonts to avoid html-to-image parsing errors
+        const getFontEmbedCSS = async () => {
+             try {
+                const fonts = [
+                    { name: "PSVBranding", url: "/fonts/PSVBranding-Regular.woff2", weight: 400, style: "normal" },
+                    { name: "PSVBranding", url: "/fonts/PSVBranding-Bold.woff2", weight: 700, style: "normal" },
+                    { name: "PSVBranding", url: "/fonts/PSVBranding-BoldItalic.woff2", weight: 700, style: "italic" },
+                    // Open Sans (User manually provided)
+                    { name: "Open Sans", url: "/fonts/OpenSans-Regular.woff2", weight: 400, style: "normal" },
+                    { name: "Open Sans", url: "/fonts/OpenSans-Bold.woff2", weight: 700, style: "normal" },
+                ]
+                const parts = await Promise.all(fonts.map(async (f) => {
+                    const res = await fetch(f.url)
+                    if (!res.ok) throw new Error(`Failed to fetch font ${f.url}`)
+                    const blob = await res.blob()
+                    return new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader()
+                        reader.onloadend = () => {
+                            if (typeof reader.result === 'string') {
+                                resolve(`@font-face { font-family: "${f.name}"; src: url(${reader.result}) format("woff2"); font-weight: ${f.weight}; font-style: ${f.style}; }`)
+                            } else {
+                                reject(new Error("Reader result not string"))
+                            }
+                        }
+                        reader.onerror = reject
+                        reader.readAsDataURL(blob)
+                    })
+                }))
+                
+                // Override Next.js generated font variables to point to our manually embedded "Open Sans"
+                const overrideCSS = `
+                    :root { 
+                        --font-open-sans: "Open Sans", sans-serif !important; 
+                        --font-sans: "Open Sans", sans-serif !important; 
+                    }
+                `
+                return parts.join("\n") + overrideCSS
+            } catch (e) {
+                console.warn("Font embedding failed, continuing without custom fonts", e)
+                return ""
+            }
+        }
+
+        const fontCSS = await getFontEmbedCSS()
+        
+        // Capture the full scrollable content
+        const node = mainRef.current
+        const width = node.scrollWidth
+        const height = node.scrollHeight
+        
+        const dataUrl = await toPng(node, { 
+            cacheBust: true, // Re-enable cache busting to avoid potential Next.js image timeouts
+            pixelRatio: 2,
+            fontEmbedCSS: fontCSS,
+            backgroundColor: "#ffffff",
+            width: width,
+            height: height,
+            style: {
+                height: 'auto',
+                overflow: 'visible',
+                maxHeight: 'none'
+            }
         })
         
-        const imgData = canvas.toDataURL("image/png")
         const pdf = new jsPDF({
-            orientation: "landscape",
+            orientation: width > height ? "landscape" : "portrait",
             unit: "px",
-            format: [canvas.width, canvas.height]
+            format: [width, height]
         })
         
-        pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height)
+        pdf.addImage(dataUrl, "PNG", 0, 0, width, height)
         pdf.save("sponsors-report.pdf")
-    } catch (err) {
-        console.error("Export failed", err)
+    } catch (err: any) {
+        console.error("Export failed details:", err)
     }
   }
 

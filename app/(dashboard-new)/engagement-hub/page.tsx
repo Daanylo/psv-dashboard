@@ -1,5 +1,7 @@
 "use client"
 
+import { PlayerLink } from "@/components/player-link"
+
 import Image from "next/image"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -82,6 +84,7 @@ type SentimentJourneyEvent = {
 
 type PlayerMentionsStats = {
   name: string
+  fotmobId: number
   shirtNumber: number | null
   mentions: number
   mentionsChangePct: number
@@ -98,6 +101,9 @@ type HotTopic = {
 
 type TopExposure = {
   brand: string
+  brandSlug: string | null
+  logoLight: string | null
+  logoDark: string | null
   appearances: number
   postUrl: string
   visibilityScore: number
@@ -106,6 +112,7 @@ type TopExposure = {
 
 type PlayerReportItem = {
   name: string
+  fotmobId: number
   shirtNumber: number | null
   position: string | null
   mentions: number
@@ -745,6 +752,7 @@ export default function EngagementHubPage() {
         const firstName = parts.join(" ")
         
         results.push({
+          fotmobId: bestLowMv.fotmobId,
             firstName,
             lastName,
             imageSrc: bestLowMv.shirtNumber ? `/player_images/${bestLowMv.shirtNumber}.png` : "/player_images/no_image.png",
@@ -763,6 +771,7 @@ export default function EngagementHubPage() {
         const negProxy = 100 - worstHighMv.positivePct
         
         results.push({
+            fotmobId: worstHighMv.fotmobId,
             firstName,
             lastName,
             imageSrc: worstHighMv.shirtNumber ? `/player_images/${worstHighMv.shirtNumber}.png` : "/player_images/no_image.png",
@@ -1349,7 +1358,9 @@ export default function EngagementHubPage() {
                             <PlayerImage shirtNumber={row.shirtNumber} name={row.name} />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate">{row.name}</div>
+                          <PlayerLink playerId={row.fotmobId} className="block truncate">
+                            {row.name}
+                          </PlayerLink>
                           <div className="text-xs text-muted-foreground">{row.position}</div>
                         </div>
                       </div>
@@ -1382,7 +1393,7 @@ export default function EngagementHubPage() {
             {sentimentVsValuePlayers.map((player) => {
               const isPositive = player.sentimentVariant === "positive"
               return (
-                <div key={player.lastName} className="rounded-xl bg-muted p-3 pb-0">
+                <div key={player.fotmobId} className="rounded-xl bg-muted p-3 pb-0">
                   <div className="flex items-center gap-3">
                     <div className="shrink-0">
                       <Image
@@ -1402,10 +1413,10 @@ export default function EngagementHubPage() {
                           " before:[clip-path:polygon(0_0,100%_0,calc(100%_-_10px)_100%,0_100%)]"
                         }
                       >
-                        <div className="relative z-10">
+                        <PlayerLink playerId={player.fotmobId} className="relative z-10 block">
                           <div className="text-xs leading-none text-white/80">{player.firstName}</div>
                           <div className="font-psv-branding italic text-2xl leading-none">{player.lastName}</div>
-                        </div>
+                        </PlayerLink>
                       </div>
 
                       <div className="mt-2 space-y-1 text-sm">

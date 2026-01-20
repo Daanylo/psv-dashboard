@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 import { ArrowRight, Calendar as CalendarIcon, Download, Filter } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { PlayerLink } from "@/components/player-link"
 
 type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 
@@ -553,8 +554,10 @@ export default function EventsPage() {
                 <div className="text-sm">Best performance</div>
                 <div className="flex items-center gap-2">
                   <div>
-                    <div className="mt-1 text-xs text-white">{bestName.first}</div>
-                    <div className="font-psv-branding italic text-3xl leading-none">{bestName.last || ""}</div>
+                    <PlayerLink playerId={best?.fotmobId} className="block">
+                      <div className="mt-1 text-xs text-white">{bestName.first}</div>
+                      <div className="font-psv-branding italic text-3xl leading-none">{bestName.last || ""}</div>
+                    </PlayerLink>
                   </div>
                   <div
                     className={
@@ -579,8 +582,10 @@ export default function EventsPage() {
                 <div className="text-sm">Worst performance</div>
                 <div className="flex items-center gap-2">
                   <div>
-                    <div className="mt-1 text-xs text-white">{worstName.first}</div>
-                    <div className="font-psv-branding italic text-3xl leading-none">{worstName.last || ""}</div>
+                    <PlayerLink playerId={worst?.fotmobId} className="block">
+                      <div className="mt-1 text-xs text-white">{worstName.first}</div>
+                      <div className="font-psv-branding italic text-3xl leading-none">{worstName.last || ""}</div>
+                    </PlayerLink>
                   </div>
                   <div
                     className={
@@ -754,7 +759,9 @@ export default function EventsPage() {
                             <PlayerTinyImage shirtNumber={row.shirtNumber} name={row.name} />
                           </div>
                           <div className="min-w-0">
-                            <div className="truncate">{row.name}</div>
+                            <PlayerLink playerId={row.fotmobId} className="block truncate">
+                              {row.name}
+                            </PlayerLink>
                           </div>
                         </div>
                       </td>

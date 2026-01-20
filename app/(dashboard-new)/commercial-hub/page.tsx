@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from "react"
 import Image from "next/image"
 import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts"
+import { BrandLink } from "@/components/brand-link"
 import {
   Activity,
   ArrowUpDown,
@@ -614,7 +615,7 @@ export default function CommercialHubPage() {
               aria-expanded={isFilterOpen}
             >
               <Filter className="h-4 w-4" />
-              <span>Filter</span>
+              <span>Sponsors</span>
             </button>
 
             {isFilterOpen ? (
@@ -706,14 +707,15 @@ export default function CommercialHubPage() {
                     const logoSrc = brand.logo_dark || brand.logo_light || ""
                     if (!logoSrc) return null
                     return (
-                    <Image
-                      key={`row-a-${brand.slug}-${index}`}
-                      src={logoSrc}
-                      alt={brand.name}
-                      width={140}
-                      height={40}
-                      className="h-8 w-auto opacity-80 grayscale brightness-200"
-                    />
+                      <BrandLink key={`row-a-${brand.slug}-${index}`} brand={brand.slug} className="shrink-0">
+                        <Image
+                          src={logoSrc}
+                          alt={brand.name}
+                          width={140}
+                          height={40}
+                          className="h-8 w-auto opacity-80 grayscale brightness-200"
+                        />
+                      </BrandLink>
                   )})}
                 </div>
               </div>
@@ -724,14 +726,15 @@ export default function CommercialHubPage() {
                     const logoSrc = brand.logo_dark || brand.logo_light || ""
                     if (!logoSrc) return null
                     return (
-                    <Image
-                      key={`row-b-${brand.slug}-${index}`}
-                      src={logoSrc}
-                      alt={brand.name}
-                      width={140}
-                      height={40}
-                      className="h-8 w-auto opacity-70 grayscale brightness-200"
-                    />
+                      <BrandLink key={`row-b-${brand.slug}-${index}`} brand={brand.slug} className="shrink-0">
+                        <Image
+                          src={logoSrc}
+                          alt={brand.name}
+                          width={140}
+                          height={40}
+                          className="h-8 w-auto opacity-70 grayscale brightness-200"
+                        />
+                      </BrandLink>
                   )})}
                 </div>
               </div>
@@ -742,14 +745,15 @@ export default function CommercialHubPage() {
                     const logoSrc = brand.logo_dark || brand.logo_light || ""
                     if (!logoSrc) return null
                     return (
-                    <Image
-                      key={`row-c-${brand.slug}-${index}`}
-                      src={logoSrc}
-                      alt={brand.name}
-                      width={140}
-                      height={40}
-                      className="h-8 w-auto opacity-60 grayscale brightness-200"
-                    />
+                      <BrandLink key={`row-c-${brand.slug}-${index}`} brand={brand.slug} className="shrink-0">
+                        <Image
+                          src={logoSrc}
+                          alt={brand.name}
+                          width={140}
+                          height={40}
+                          className="h-8 w-auto opacity-60 grayscale brightness-200"
+                        />
+                      </BrandLink>
                   )})}
                 </div>
               </div>

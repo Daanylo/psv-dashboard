@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowRight,
@@ -266,6 +267,9 @@ function getFlagEmoji(countryCode: string | null) {
 }
 
 export default function PlayersPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
   const [search, setSearch] = useState("")
   const [commentsSort, setCommentsSort] = useState<"likes" | "time">("likes")
   const [commentsSentiment, setCommentsSentiment] = useState<"all" | "positive" | "neutral" | "negative">("all")
@@ -298,6 +302,34 @@ export default function PlayersPage() {
 
   const lastPlayerOverviewUrlRef = useRef<string | null>(null)
   const lastCommentsUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const raw = searchParams.get("player_id")
+    if (!raw) return
+
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed) || parsed <= 0) return
+
+    if (selectedPlayerId !== parsed) {
+      setSelectedPlayerId(parsed)
+    }
+  }, [searchParams, selectedPlayerId])
+
+  useEffect(() => {
+    const raw = searchParams.get("player_id")
+    const current = raw ? Number(raw) : null
+    const currentValid = current && Number.isFinite(current) && current > 0 ? current : null
+    const nextValid = selectedPlayerId && selectedPlayerId > 0 ? selectedPlayerId : null
+
+    if (currentValid === nextValid) return
+
+    const params = new URLSearchParams(searchParams.toString())
+    if (nextValid) params.set("player_id", String(nextValid))
+    else params.delete("player_id")
+
+    const qs = params.toString()
+    router.replace(qs ? `/players?${qs}` : "/players")
+  }, [router, searchParams, selectedPlayerId])
 
   const mentionsJourneyRef = useRef<HTMLDivElement | null>(null)
   const [eventMentionsHeightPx, setEventMentionsHeightPx] = useState<number | undefined>(undefined)

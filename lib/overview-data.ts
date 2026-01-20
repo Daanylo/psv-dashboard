@@ -43,6 +43,7 @@ export type PlayerComment = {
 
 export type MentionedPlayer = {
   name: string
+  fotmobId: number
   shirtNumber: number | null
   mentions: number
   mentionsChangePct: number
@@ -75,6 +76,9 @@ export type PlayerReportItem = {
 
 export type TopExposure = {
   brand: string
+  brandSlug: string | null
+  logoLight: string | null
+  logoDark: string | null
   appearances: number
   postUrl: string
   visibilityScore: number
@@ -555,6 +559,7 @@ export function finalizeMentionedPlayer(
   const total = agg.total
   return {
     name: agg.name,
+    fotmobId: agg.fotmobId,
     shirtNumber: agg.shirtNumber,
     mentions: total,
     mentionsChangePct: percentChange(total, prevTotal),
@@ -757,13 +762,31 @@ export async function loadHotTopics(
 
 export async function loadTopExposures(startTs: number, endTs: number) {
   // 1. Get top 3 brands by frequency
-  const brandRows = await query<{ brand: string; count: number; avg_viz: number }[]>(
-    `SELECT ld.logo_label as brand, COUNT(*) as count, AVG(ld.visibility_score) as avg_viz
+  const brandRows = await query<
+    {
+      brandId: number | null
+      brand: string
+      brandSlug: string | null
+      logoLight: string | null
+      logoDark: string | null
+      count: number
+      avg_viz: number
+    }[]
+  >(
+    `SELECT
+       b.id as brandId,
+       COALESCE(b.name, ld.logo_label) as brand,
+       b.slug as brandSlug,
+       COALESCE(b.logo_light, b.logo_light_url) as logoLight,
+       COALESCE(b.logo_dark, b.logo_dark_url) as logoDark,
+       COUNT(*) as count,
+       AVG(ld.visibility_score) as avg_viz
      FROM logo_detections ld
      JOIN instagram_posts ip ON ld.post_id = ip.id
+     LEFT JOIN brands b ON ld.brand_id = b.id
      WHERE ip.taken_at_timestamp >= ? AND ip.taken_at_timestamp <= ?
        AND ld.logo_label IS NOT NULL AND ld.logo_label <> ''
-     GROUP BY ld.logo_label
+     GROUP BY b.id, b.slug, COALESCE(b.name, ld.logo_label), COALESCE(b.logo_light, b.logo_light_url), COALESCE(b.logo_dark, b.logo_dark_url)
      ORDER BY count DESC
      LIMIT 3`,
     [startTs, endTs],
@@ -777,16 +800,19 @@ export async function loadTopExposures(startTs: number, endTs: number) {
       `SELECT ip.url, ip.shortcode, ld.visibility_score as viz
        FROM logo_detections ld
        JOIN instagram_posts ip ON ld.post_id = ip.id
-       WHERE ld.logo_label = ?
+       WHERE ${b.brandId ? "ld.brand_id = ?" : "ld.logo_label = ?"}
          AND ip.taken_at_timestamp >= ? AND ip.taken_at_timestamp <= ?
        ORDER BY ld.visibility_score DESC
        LIMIT 1`,
-      [b.brand, startTs, endTs],
+      [b.brandId ?? b.brand, startTs, endTs],
     )
 
     if (posts.length > 0) {
       results.push({
         brand: b.brand,
+        brandSlug: b.brandSlug,
+        logoLight: b.logoLight,
+        logoDark: b.logoDark,
         appearances: Number(b.count),
         postUrl: posts[0].shortcode ? `https://www.instagram.com/p/${posts[0].shortcode}/media/?size=l` : posts[0].url || "",
         visibilityScore: Number(posts[0].viz),

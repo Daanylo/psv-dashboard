@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect, useRef } from "react"
 import Image from "next/image"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   Activity,
   Calendar as CalendarIcon,
@@ -129,10 +130,35 @@ export default function SponsorsReportPage() {
   const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
-  const [brandKey, setBrandKey] = useState<string>("puma")
+  const [brandKey, setBrandKey] = useState<string>(() => {
+    if (typeof window === "undefined") return "puma"
+    const sp = new URLSearchParams(window.location.search)
+    return sp.get("brand") || "puma"
+  })
   const [sortBy, setSortBy] = useState<SortKey>("impressions")
   const [availableBrands, setAvailableBrands] = useState<Brand[]>([])
   const [brandsLoading, setBrandsLoading] = useState(true)
+
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const brandParam = searchParams.get("brand")
+
+  useEffect(() => {
+    if (brandParam && brandParam !== brandKey) {
+      setBrandKey(brandParam)
+    }
+  }, [brandParam, brandKey])
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    if (brandKey) sp.set("brand", brandKey)
+    else sp.delete("brand")
+
+    const nextSearch = sp.toString() ? `?${sp.toString()}` : ""
+    if (nextSearch !== window.location.search) {
+      router.replace(`/sponsors-report${nextSearch}`, { scroll: false })
+    }
+  }, [brandKey, router])
 
   // Fetch available brands
   useEffect(() => {
@@ -596,7 +622,7 @@ export default function SponsorsReportPage() {
               aria-expanded={isFilterOpen}
             >
               <Filter className="h-4 w-4" />
-              <span>Filter</span>
+              <span>Sponsor</span>
             </button>
 
             {isFilterOpen ? (

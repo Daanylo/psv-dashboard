@@ -28,6 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { PlayerLink } from "@/components/player-link"
+import { BrandLink } from "@/components/brand-link"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import {
@@ -70,6 +72,7 @@ type SentimentJourneyEvent = {
 
 type PlayerMentionsStats = {
   name: string
+  fotmobId: number
   shirtNumber: number | null
   mentions: number
   mentionsChangePct: number
@@ -86,6 +89,9 @@ type HotTopic = {
 
 type TopExposure = {
   brand: string
+  brandSlug: string | null
+  logoLight: string | null
+  logoDark: string | null
   appearances: number
   postUrl: string
   visibilityScore: number
@@ -94,6 +100,7 @@ type TopExposure = {
 
 type PlayerReportItem = {
   name: string
+  fotmobId: number
   shirtNumber: number | null
   position: string | null
   mentions: number
@@ -294,6 +301,7 @@ function makeMockPlayerMentionsStats(seedBase: number): PlayerMentionsStats {
 
   return {
     name: "Mock Player",
+    fotmobId: seedBase,
     shirtNumber: null,
     mentions,
     mentionsChangePct: percentChange(mentions, prevMentions),
@@ -602,9 +610,10 @@ export default function HomePage() {
   }, [start, end, journeyGranularity])
 
   const playerMentions = useMemo(() => {
-    const fallback = {
+    const fallback: { mostPopular: PlayerMentionsStats; mostControversial: PlayerMentionsStats } = {
       mostPopular: {
         name: "—",
+        fotmobId: 0,
         shirtNumber: null,
         mentions: 0,
         mentionsChangePct: 0,
@@ -614,6 +623,7 @@ export default function HomePage() {
       },
       mostControversial: {
         name: "—",
+        fotmobId: 0,
         shirtNumber: null,
         mentions: 0,
         mentionsChangePct: 0,
@@ -1230,7 +1240,7 @@ export default function HomePage() {
                   " before:[clip-path:polygon(0_0,100%_0,calc(100%_-_10px)_100%,0_100%)]"
                 }
               >
-                <div className="relative z-10">
+                <PlayerLink playerId={playerMentions.mostPopular.fotmobId} className="relative z-10 block">
                   <div className="text-xs leading-none text-white/80">
                     {playerMentions.mostPopular.name.split(" ").slice(0, -1).join(" ") ||
                       playerMentions.mostPopular.name}
@@ -1238,7 +1248,7 @@ export default function HomePage() {
                   <div className="font-psv-branding italic text-3xl leading-none">
                     {playerMentions.mostPopular.name.split(" ").slice(-1)[0]}
                   </div>
-                </div>
+                </PlayerLink>
               </div>
 
               <div className="mt-3 flex items-baseline gap-2">
@@ -1310,7 +1320,7 @@ export default function HomePage() {
                   " before:[clip-path:polygon(0_0,100%_0,calc(100%_-_10px)_100%,0_100%)]"
                 }
               >
-                <div className="relative z-10">
+                <PlayerLink playerId={playerMentions.mostControversial.fotmobId} className="relative z-10 block">
                   <div className="text-xs leading-none text-white/80">
                     {playerMentions.mostControversial.name
                       .split(" ")
@@ -1320,7 +1330,7 @@ export default function HomePage() {
                   <div className="font-psv-branding italic text-3xl leading-none">
                     {playerMentions.mostControversial.name.split(" ").slice(-1)[0]}
                   </div>
-                </div>
+                </PlayerLink>
               </div>
 
               <div className="mt-3 flex items-baseline gap-2">
@@ -1503,7 +1513,9 @@ export default function HomePage() {
                           <PlayerImage shirtNumber={row.shirtNumber} name={row.name} />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate">{row.name}</div>
+                          <PlayerLink playerId={row.fotmobId} className="block truncate">
+                            {row.name}
+                          </PlayerLink>
                         </div>
                       </div>
                     </td>
@@ -1544,7 +1556,10 @@ export default function HomePage() {
           <div className="flex-1 min-h-0 px-6 pb-6">
             <div className="grid h-full grid-cols-3 gap-3">
               {(overview?.topExposures ?? []).slice(0, 3).map((item) => {
-                const sponsorSrc = getSponsorLogo(item.brand)
+                const logoLight = item.logoLight && item.logoLight.trim() ? item.logoLight : null
+                const logoDark = item.logoDark && item.logoDark.trim() ? item.logoDark : null
+                const fallbackLogo = getSponsorLogo(item.brand)
+                const linkBrand = item.brandSlug ?? item.brand
                 return (
                   <div
                     key={item.brand}
@@ -1560,19 +1575,44 @@ export default function HomePage() {
                       />
                     </div>
                     <div className="shrink-0 flex flex-col items-center justify-center gap-1 border-t border-border bg-muted px-2 py-2">
-                      {sponsorSrc ? (
-                        <Image
-                          src={sponsorSrc}
-                          alt={item.brand}
-                          width={120}
-                          height={40}
-                          className="h-5 w-auto object-contain"
-                        />
-                      ) : (
-                        <div className="flex h-5 items-center justify-center font-bold text-xs uppercase tracking-tight">
-                          {item.brand}
-                        </div>
-                      )}
+                      <BrandLink brand={linkBrand} className="h-5 w-full justify-center">
+                        {logoLight || logoDark ? (
+                          <div className="h-5 w-full flex items-center justify-center">
+                            {logoLight && logoDark ? (
+                              <>
+                                <img
+                                  src={logoLight}
+                                  alt={item.brand}
+                                  className="h-5 w-auto object-contain dark:hidden"
+                                />
+                                <img
+                                  src={logoDark}
+                                  alt={item.brand}
+                                  className="hidden h-5 w-auto object-contain dark:block"
+                                />
+                              </>
+                            ) : (
+                              <img
+                                src={logoLight ?? logoDark ?? ""}
+                                alt={item.brand}
+                                className="h-5 w-auto object-contain"
+                              />
+                            )}
+                          </div>
+                        ) : fallbackLogo ? (
+                          <Image
+                            src={fallbackLogo}
+                            alt={item.brand}
+                            width={120}
+                            height={40}
+                            className="h-5 w-auto object-contain"
+                          />
+                        ) : (
+                          <div className="flex h-5 items-center justify-center font-bold text-xs uppercase tracking-tight">
+                            {item.brand}
+                          </div>
+                        )}
+                      </BrandLink>
                     </div>
                     <div className="shrink-0 flex flex-col gap-0.5 w-full text-[10px] text-muted-foreground px-3 py-2 bg-muted/40 border-t border-border/50">
                       <div className="flex justify-between w-full">

@@ -1210,7 +1210,7 @@ export default function PlayersPage() {
           className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1"
           style={eventMentionsHeightPx ? { height: eventMentionsHeightPx } : undefined}
         >
-          <div className="px-6 pt-6 pb-4">
+          <div className="px-6 py-4">
             <div className="flex items-baseline justify-between gap-3">
               <div className="text-base font-semibold font-psv-branding">EVENT MENTIONS</div>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>

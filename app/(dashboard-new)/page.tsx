@@ -1364,7 +1364,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="flex h-[215px] flex-col overflow-hidden rounded-xl border border-border bg-background">
-          <div className="px-6 pt-6 pb-4">
+          <div className="px-6 py-4">
             <div className="flex items-baseline justify-between gap-3">
               <div className="text-base font-semibold font-psv-branding">HOT TOPICS</div>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>

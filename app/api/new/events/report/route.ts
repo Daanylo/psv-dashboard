@@ -34,7 +34,9 @@ export async function GET(req: Request) {
     const matchRows = await query<
       Array<{
         fotmob_match_id: number
+        home_team_id: number
         home_team_name: string
+        away_team_id: number
         away_team_name: string
         score_str: string | null
         tournament_name: string | null
@@ -42,7 +44,7 @@ export async function GET(req: Request) {
         finished: number | null
       }>
     >(
-      `SELECT fotmob_match_id, home_team_name, away_team_name, score_str, tournament_name, match_utc_time, finished
+      `SELECT fotmob_match_id, home_team_id, home_team_name, away_team_id, away_team_name, score_str, tournament_name, match_utc_time, finished
        FROM matches
        WHERE fotmob_match_id = ?
        LIMIT 1`,
@@ -246,7 +248,9 @@ export async function GET(req: Request) {
     return NextResponse.json({
       match: {
         id: Number(match.fotmob_match_id),
+        homeTeamId: Number(match.home_team_id),
         homeTeamName: match.home_team_name,
+        awayTeamId: Number(match.away_team_id),
         awayTeamName: match.away_team_name,
         scoreStr: match.score_str,
         tournamentName: match.tournament_name,

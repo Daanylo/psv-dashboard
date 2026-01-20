@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "placehold.co",
       },
+      {
+        protocol: "https",
+        hostname: "images.fotmob.com",
+        pathname: "/image_resources/logo/teamlogo/**",
+      },
     ],
   },
   turbopack: {},

@@ -17,6 +17,10 @@ function formatShortDate(date: Date) {
   })
 }
 
+function getFotmobTeamLogoUrl(teamId: number) {
+  return `/api/fotmob/teamlogo/${teamId}`
+}
+
 function toIsoDateOnly(date: Date) {
   const d = new Date(date)
   d.setHours(0, 0, 0, 0)
@@ -61,25 +65,23 @@ function splitName(name: string) {
   return { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1] }
 }
 
-function getClubLogoSrc(teamName: string) {
-  const key = teamName.toLowerCase()
-  if (key.includes("ajax")) return "/club-logos/Logo_AFC_Ajax_(1928-1991,_2025-).png"
-  if (key.includes("feyenoord")) return "/club-logos/Feyenoord_logo.svg.png"
-  if (key.includes("utrecht")) return "/club-logos/Logo_FC_Utrecht.svg.png"
-  if (key.includes("twente")) return "/club-logos/fc-twente-logo-png-transparent.png"
-  if (key.includes("az")) return "/club-logos/AZ_Alkmaar.svg.png"
-  return null
-}
+function ClubLogo({ teamId, teamName }: { teamId: number | null | undefined; teamName: string }) {
+  const [broken, setBroken] = useState(false)
 
-function ClubLogo({ teamName }: { teamName: string }) {
-  const src = getClubLogoSrc(teamName)
-  if (!src) {
-    const initials = teamName
+  useEffect(() => {
+    setBroken(false)
+  }, [teamId])
+
+  const initials = useMemo(() => {
+    return teamName
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
       .map((p) => p[0]?.toUpperCase())
       .join("")
+  }, [teamName])
+
+  if (!teamId || broken) {
     return (
       <div className="flex h-[35px] w-[35px] items-center justify-center rounded-full bg-white/15 text-xs font-semibold">
         {initials || "?"}
@@ -87,7 +89,15 @@ function ClubLogo({ teamName }: { teamName: string }) {
     )
   }
 
-  return <Image src={src} alt={teamName} width={35} height={35} />
+  return (
+    <Image
+      src={getFotmobTeamLogoUrl(teamId)}
+      alt={teamName}
+      width={35}
+      height={35}
+      onError={() => setBroken(true)}
+    />
+  )
 }
 
 function PlayerHeroImage({ shirtNumber, name }: { shirtNumber: number | null; name: string }) {
@@ -132,7 +142,9 @@ function PlayerTinyImage({ shirtNumber, name }: { shirtNumber: number | null; na
 
 type MatchListItem = {
   id: number
+  homeTeamId: number
   homeTeamName: string
+  awayTeamId: number
   awayTeamName: string
   scoreStr: string | null
   tournamentName: string | null
@@ -378,7 +390,6 @@ export default function EventsPage() {
   const worstRating = worst?.rating ?? 0
   const sentiment = report?.metrics.sentiment
   const impressions = report?.metrics.impressions
-  const netPct = sentiment ? sentiment.net * 100 : 0
 
   return (
     <main className="max-w-screen-xl mx-auto px-6 py-8">
@@ -466,7 +477,6 @@ export default function EventsPage() {
                       .map((m) => {
                         const isSelected = m.id === selectedMatchId
                         const dateLabel = m.matchUtcTime ? formatShortDate(new Date(m.matchUtcTime)) : ""
-                        const label = `${m.homeTeamName} - ${m.awayTeamName}`
                         return (
                           <button
                             key={m.id}
@@ -481,8 +491,15 @@ export default function EventsPage() {
                             }
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <div className="truncate">{label}</div>
-                              <div className="text-xs text-muted-foreground">{m.scoreStr ?? ""}</div>
+                              <div className="flex items-center gap-2">
+                                <div className="h-[24px] w-[24px]">
+                                  <ClubLogo teamId={m.homeTeamId ?? null} teamName={m.homeTeamName} />
+                                </div>
+                                <div className="text-xs text-muted-foreground tabular-nums">{m.scoreStr ?? ""}</div>
+                                <div className="h-[24px] w-[24px]">
+                                  <ClubLogo teamId={m.awayTeamId ?? null} teamName={m.awayTeamName} />
+                                </div>
+                              </div>
                             </div>
                             <div className="text-xs text-muted-foreground truncate">{dateLabel}</div>
                           </button>
@@ -513,16 +530,16 @@ export default function EventsPage() {
           " before:[clip-path:polygon(0_0,100%_0,calc(100%_-_12px)_100%,0_100%)]"
         }
       >
-        <div className="relative z-10 flex h-full flex-nowrap items-stretch justify-between px-6 text-white">
+        <div className="relative z-10 flex h-full flex-nowrap items-stretch justify-start gap-20 px-6 pr-12 text-white">
           <div className="flex flex-none flex-col justify-center">
             <div className="flex items-baseline gap-2 justify-between">
-              <div className="text-sm">{matchTitle}</div>
+              <div className="text-sm">Match</div>
               <div className="text-sm text-white/80">{recentEventDateLabel}</div>
             </div>
             <div className="mt-3 flex items-center gap-3">
-              <ClubLogo teamName={selectedMatch?.homeTeamName ?? "Home"} />
+              <ClubLogo teamId={selectedMatch?.homeTeamId ?? null} teamName={selectedMatch?.homeTeamName ?? "Home"} />
               <div className="text-3xl font-psv-branding italic">{matchScore}</div>
-              <ClubLogo teamName={selectedMatch?.awayTeamName ?? "Away"} />
+              <ClubLogo teamId={selectedMatch?.awayTeamId ?? null} teamName={selectedMatch?.awayTeamName ?? "Away"} />
             </div>
           </div>
 
@@ -577,158 +594,120 @@ export default function EventsPage() {
               </div>
             </div>
           </div>
-
-          <div className="flex flex-none items-center justify-end px-4">
-            <Link
-              href="/commercial-hub"
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-4 text-sm text-black"
-            >
-              <ArrowRight className="h-4 w-4" />
-              <span>View impact</span>
-            </Link>
-          </div>
         </div>
       </section>
 
-      <section className="mt-6 grid w-full grid-cols-1 gap-6 md:grid-cols-3">
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background">
-          <div className="px-6 pt-6 pb-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">SENTIMENT &amp; ENGAGEMENT</div>
-              <div className="text-sm text-muted-foreground">Match window</div>
-            </div>
-          </div>
-
-          <div className="border-t border-border px-6 py-4">
-            {reportLoading ? (
-              <div className="text-sm text-muted-foreground">Loading...</div>
-            ) : reportError ? (
-              <div className="text-sm text-red-500">{reportError}</div>
-            ) : sentiment ? (
-              <div className="space-y-3">
-                <div className="flex items-baseline justify-between">
-                  <div className="text-2xl font-semibold tabular-nums">{netPct.toFixed(0)}%</div>
-                  <div className="text-xs text-muted-foreground">Net sentiment</div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Positive</div>
-                    <div className="tabular-nums">{sentiment.total ? ((sentiment.pos / sentiment.total) * 100).toFixed(0) : "0"}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Negative</div>
-                    <div className="tabular-nums">{sentiment.total ? ((sentiment.neg / sentiment.total) * 100).toFixed(0) : "0"}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Neutral</div>
-                    <div className="tabular-nums">{sentiment.total ? ((sentiment.neu / sentiment.total) * 100).toFixed(0) : "0"}%</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Comments</div>
-                    <div className="tabular-nums">{formatCompactNumber(sentiment.commentCount)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Likes</div>
-                    <div className="tabular-nums">{formatCompactNumber(sentiment.likesSum)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Volume</div>
-                    <div className="tabular-nums">{formatCompactNumber(sentiment.total)}</div>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Δ vs prev week: {(sentiment.netDeltaVsPrevWeek * 100).toFixed(0)}%
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">No data</div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background">
-          <div className="px-6 pt-6 pb-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">IMPRESSIONS</div>
-              <div className="text-sm text-muted-foreground">Match window</div>
-            </div>
-          </div>
-
-          <div className="border-t border-border px-6 py-4">
-            {reportLoading ? (
-              <div className="text-sm text-muted-foreground">Loading...</div>
-            ) : reportError ? (
-              <div className="text-sm text-red-500">{reportError}</div>
-            ) : impressions ? (
-              <div className="space-y-3">
-                <div className="flex items-baseline justify-between">
-                  <div className="text-2xl font-semibold tabular-nums">{formatCompactNumber(impressions.total)}</div>
-                  <div className="text-xs text-muted-foreground">Total impressions</div>
-                </div>
-                <div className="text-sm text-muted-foreground">Posts: {impressions.postCount}</div>
-                {impressions.topPosts.length ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {impressions.topPosts.map((p) => (
-                      <a
-                        key={p.id}
-                        href={p.url ?? (p.shortcode ? `https://www.instagram.com/p/${p.shortcode}/` : "#")}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="group relative overflow-hidden rounded-md border border-border"
-                      >
-                        <img src={p.imageUrl} alt="Top post" className="h-20 w-full object-cover" />
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1 text-[10px] text-white">
-                          {formatCompactNumber(p.impressions)}
+      <section className="mt-6">
+        {reportLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : reportError ? (
+          <div className="text-sm text-red-500">{reportError}</div>
+        ) : (
+          <>
+            <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
+              {impressions ? (
+                <>
+                  <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1">
+                    <div className="px-6 py-4">
+                      <div className="text-base font-semibold font-psv-branding">MATCH METRICS</div>
+                    </div>
+                    <div className="border-t border-border px-6 py-4">
+                      <div className="flex flex-col gap-3 text-sm">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="text-xs text-muted-foreground">IMPRESSIONS</div>
+                          <div className="font-psv-branding italic tabular-nums">{formatCompactNumber(impressions.total)}</div>
                         </div>
-                      </a>
-                    ))}
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="text-xs text-muted-foreground">POSTS</div>
+                          <div className="font-psv-branding italic tabular-nums">{formatCompactNumber(impressions.postCount)}</div>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="text-xs text-muted-foreground">POSITIVE</div>
+                          <div className="font-psv-branding italic tabular-nums">
+                            {sentiment
+                              ? `${sentiment.total ? ((sentiment.pos / sentiment.total) * 100).toFixed(0) : "0"}%`
+                              : "—"}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="text-xs text-muted-foreground">NEUTRAL</div>
+                          <div className="font-psv-branding italic tabular-nums">
+                            {sentiment
+                              ? `${sentiment.total ? ((sentiment.neu / sentiment.total) * 100).toFixed(0) : "0"}%`
+                              : "—"}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="text-xs text-muted-foreground">NEGATIVE</div>
+                          <div className="font-psv-branding italic tabular-nums">
+                            {sentiment
+                              ? `${sentiment.total ? ((sentiment.neg / sentiment.total) * 100).toFixed(0) : "0"}%`
+                              : "—"}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="text-xs text-muted-foreground">COMMENTS</div>
+                          <div className="font-psv-branding italic tabular-nums">
+                            {sentiment ? formatCompactNumber(sentiment.commentCount) : "—"}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="text-xs text-muted-foreground">LIKES</div>
+                          <div className="font-psv-branding italic tabular-nums">
+                            {sentiment ? formatCompactNumber(sentiment.likesSum) : "—"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">No posts in window</div>
-                )}
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">No data</div>
-            )}
-          </div>
-        </div>
 
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background">
-          <div className="px-6 pt-6 pb-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">TOP TOPICS</div>
-              <div className="text-sm text-muted-foreground">Match window</div>
+                  <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-2">
+                    <div className="px-6 py-4">
+                      <div className="text-base font-semibold font-psv-branding">TOP POSTS</div>
+                    </div>
+                    <div className="border-t border-border px-6 py-4">
+                      {impressions.topPosts.length ? (
+                        <div className="grid grid-cols-3 gap-3">
+                          {impressions.topPosts.map((p) => (
+                            <a
+                              key={p.id}
+                              href={p.url ?? (p.shortcode ? `https://www.instagram.com/p/${p.shortcode}/` : "#")}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="group relative aspect-[3/4] w-full overflow-hidden rounded-md border border-border"
+                            >
+                              <Image
+                                src={p.imageUrl || "/posts/post-template.png"}
+                                alt="Top post"
+                                fill
+                                sizes="(min-width: 768px) 220px, 33vw"
+                                className="object-cover"
+                              />
+                              <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1 text-[10px] text-white">
+                                {formatCompactNumber(p.impressions)}
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No posts in window</div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-muted-foreground">No data</div>
+              )}
             </div>
-          </div>
-
-          <div className="border-t border-border px-6 py-4">
-            {reportLoading ? (
-              <div className="text-sm text-muted-foreground">Loading...</div>
-            ) : reportError ? (
-              <div className="text-sm text-red-500">{reportError}</div>
-            ) : report?.metrics.topics?.length ? (
-              <div className="space-y-2">
-                {report.metrics.topics.map((t) => (
-                  <div key={t.topic} className="flex items-center justify-between gap-4 text-sm">
-                    <div className="truncate">{t.topic}</div>
-                    <div className="text-muted-foreground tabular-nums">{t.count}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">No topics</div>
-            )}
-          </div>
-        </div>
+          </>
+        )}
       </section>
 
       <section className="mt-6 flex flex-col overflow-hidden rounded-xl border border-border bg-background">
-        <div className="px-6 pt-6 pb-4">
+        <div className="px-6 py-4">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <div className="text-base font-semibold font-psv-branding">RATING VS SENTIMENT ANOMALIES</div>
+              <div className="text-base font-semibold font-psv-branding">PERFORMANCE VS SENTIMENT</div>
               <div className="text-sm text-muted-foreground">Mismatch between match rating and comment sentiment</div>
             </div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
@@ -740,16 +719,24 @@ export default function EventsPage() {
         ) : reportError ? (
           <div className="border-t border-border px-6 py-6 text-sm text-red-500">{reportError}</div>
         ) : report?.metrics.playerSentimentVsRating?.length ? (
-          <div className="border-t border-border overflow-x-auto">
-            <table className="w-full table-fixed text-sm">
+          <div className="flex-1 overflow-x-auto border-t border-border">
+            <table className="w-full table-fixed text-xs">
+              <colgroup>
+                <col />
+                <col className="w-24" />
+                <col className="w-20" />
+                <col className="w-16" />
+                <col className="w-16" />
+                <col className="w-20" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th className="sticky top-0 z-10 bg-muted px-6 py-2 text-left font-semibold text-muted-foreground">PLAYER</th>
-                  <th className="sticky top-0 z-10 w-24 bg-muted px-6 py-2 text-right font-semibold text-muted-foreground">RATING</th>
-                  <th className="sticky top-0 z-10 w-24 bg-muted px-6 py-2 text-right font-semibold text-muted-foreground">MENTIONS</th>
-                  <th className="sticky top-0 z-10 w-24 bg-muted px-6 py-2 text-right font-semibold text-muted-foreground">POS</th>
-                  <th className="sticky top-0 z-10 w-24 bg-muted px-6 py-2 text-right font-semibold text-muted-foreground">NEG</th>
-                  <th className="sticky top-0 z-10 w-28 bg-muted px-6 py-2 text-right font-semibold text-muted-foreground">MISMATCH</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">PLAYER</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">RATING</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">MENTIONS</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">POS</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">NEG</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">MISMATCH</th>
                 </tr>
               </thead>
               <tbody>
@@ -757,22 +744,29 @@ export default function EventsPage() {
                   const mismatch = row.diff
                   const mismatchLabel = `${mismatch >= 0 ? "+" : ""}${(mismatch * 100).toFixed(0)}%`
                   return (
-                    <tr key={row.fotmobId} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
-                      <td className="px-6 py-2">
-                        <div className="flex items-center gap-3">
-                          <PlayerTinyImage shirtNumber={row.shirtNumber} name={row.name} />
-                          <div className="truncate">{row.name}</div>
+                    <tr
+                      key={row.fotmobId}
+                      className={(index % 2 === 0 ? "bg-background" : "bg-muted") + " h-8"}
+                    >
+                      <td className="h-full px-3">
+                        <div className="flex h-full items-center gap-2">
+                          <div className="pt-1 self-end">
+                            <PlayerTinyImage shirtNumber={row.shirtNumber} name={row.name} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate">{row.name}</div>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-6 py-2 text-right">
+                      <td className="px-3 py-2 text-right">
                         <span className={"inline-flex h-5 items-center rounded-md px-2 text-xs font-semibold text-black " + getRatingBadgeClass(row.rating)}>
                           {row.rating.toFixed(1)}
                         </span>
                       </td>
-                      <td className="px-6 py-2 text-right text-muted-foreground tabular-nums">{row.mentions}</td>
-                      <td className="px-6 py-2 text-right text-muted-foreground tabular-nums">{row.positivePct.toFixed(0)}%</td>
-                      <td className="px-6 py-2 text-right text-muted-foreground tabular-nums">{row.negativePct.toFixed(0)}%</td>
-                      <td className="px-6 py-2 text-right">
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{row.mentions.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{row.positivePct.toFixed(0)}%</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{row.negativePct.toFixed(0)}%</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">
                         <span className={mismatch >= 0 ? "text-green-600" : "text-red-500"}>{mismatchLabel}</span>
                       </td>
                     </tr>

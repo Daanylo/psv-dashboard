@@ -651,7 +651,9 @@ export function pickMostControversial(
 
 export type MatchRow = {
   fotmob_match_id: number
+  home_team_id: number
   home_team_name: string
+  away_team_id: number
   away_team_name: string
   score_str: string | null
   tournament_name: string | null
@@ -664,7 +666,7 @@ export async function loadMatches(start: Date, end: Date) {
   const endStr = `${toIsoDateOnly(end)} 23:59:59`
 
   const matches = await query<MatchRow[]>(
-    `SELECT fotmob_match_id, home_team_name, away_team_name, score_str, tournament_name, match_utc_time, finished
+    `SELECT fotmob_match_id, home_team_id, home_team_name, away_team_id, away_team_name, score_str, tournament_name, match_utc_time, finished
      FROM matches
      WHERE match_utc_time IS NOT NULL
        AND match_utc_time >= ?
@@ -721,7 +723,7 @@ export async function loadHotTopics(
   const endStr = `${toIsoDateOnly(end)} 23:59:59`
 
   const matches = await query<MatchRow[]>(
-    `SELECT fotmob_match_id, home_team_name, away_team_name, score_str, tournament_name, match_utc_time, finished
+    `SELECT fotmob_match_id, home_team_id, home_team_name, away_team_id, away_team_name, score_str, tournament_name, match_utc_time, finished
      FROM matches
      WHERE match_utc_time IS NOT NULL
        AND match_utc_time >= ?

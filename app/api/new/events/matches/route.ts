@@ -20,7 +20,9 @@ export async function GET(req: Request) {
       meta: { start: toIsoDateOnly(start), end: toIsoDateOnly(end) },
       matches: matches.map((m) => ({
         id: Number(m.fotmob_match_id),
+        homeTeamId: Number(m.home_team_id),
         homeTeamName: m.home_team_name,
+        awayTeamId: Number(m.away_team_id),
         awayTeamName: m.away_team_name,
         scoreStr: m.score_str,
         tournamentName: m.tournament_name,

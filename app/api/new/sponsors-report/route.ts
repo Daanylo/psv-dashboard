@@ -76,7 +76,8 @@ async function getTopExposures(start: number, end: number, brandKey: string, sor
     id: r.id.toString(),
     impressions: Number(r.impressions),
     visibilityPct: Number(r.visibility),
-    imageSrc: r.shortcode ? `https://www.instagram.com/p/${r.shortcode}/media/?size=l` : r.url
+    imageSrc: r.shortcode ? `https://www.instagram.com/p/${r.shortcode}/media/?size=l` : r.url,
+    url: r.url || (r.shortcode ? `https://www.instagram.com/p/${r.shortcode}/` : "")
   }))
 }
 

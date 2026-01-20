@@ -54,6 +54,7 @@ export type MentionedPlayer = {
 
 export type HotTopic = {
   rank: number
+  matchId: number
   topic: string
   mentions: number
 }
@@ -81,6 +82,7 @@ export type TopExposure = {
   logoDark: string | null
   appearances: number
   postUrl: string
+  postLink: string
   visibilityScore: number
   avgVisibility: number
 }
@@ -750,6 +752,7 @@ export async function loadHotTopics(
     const topic = `${m.home_team_name} vs ${m.away_team_name}`
     results.push({
       rank: 0,
+      matchId: Number(m.fotmob_match_id),
       topic,
       mentions,
     })
@@ -815,6 +818,7 @@ export async function loadTopExposures(startTs: number, endTs: number) {
         logoDark: b.logoDark,
         appearances: Number(b.count),
         postUrl: posts[0].shortcode ? `https://www.instagram.com/p/${posts[0].shortcode}/media/?size=l` : posts[0].url || "",
+        postLink: posts[0].shortcode ? `https://www.instagram.com/p/${posts[0].shortcode}/` : posts[0].url || "",
         visibilityScore: Number(posts[0].viz),
         avgVisibility: Number(b.avg_viz || 0),
       })

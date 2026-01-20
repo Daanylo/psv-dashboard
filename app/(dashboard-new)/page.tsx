@@ -83,6 +83,7 @@ type PlayerMentionsStats = {
 
 type HotTopic = {
   rank: number
+  matchId: number
   topic: string
   mentions: number
 }
@@ -94,6 +95,7 @@ type TopExposure = {
   logoDark: string | null
   appearances: number
   postUrl: string
+  postLink: string
   visibilityScore: number
   avgVisibility: number
 }
@@ -1376,7 +1378,7 @@ export default function HomePage() {
         <div className="flex h-[215px] flex-col overflow-hidden rounded-xl border border-border bg-background">
           <div className="px-6 py-4">
             <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">HOT TOPICS</div>
+              <div className="text-base font-semibold font-psv-branding">EVENTS</div>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>
@@ -1389,7 +1391,7 @@ export default function HomePage() {
                     #
                   </th>
                   <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">
-                    TOPIC
+                    EVENT
                   </th>
                   <th className="sticky top-0 z-10 w-24 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">
                     MENTIONS
@@ -1401,7 +1403,12 @@ export default function HomePage() {
                   <tr key={row.rank} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
                     <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="px-3 py-2">
-                      <div className="truncate">{row.topic}</div>
+                      <Link
+                        href={`/events?match_id=${row.matchId}`}
+                        className="block truncate hover:underline"
+                      >
+                        {row.topic}
+                      </Link>
                     </td>
                     <td className="w-24 px-3 py-2 text-right font-medium tabular-nums">
                       {row.mentions.toLocaleString()}
@@ -1411,7 +1418,7 @@ export default function HomePage() {
                 {(!overview?.hotTopics || overview.hotTopics.length === 0) && (
                   <tr>
                     <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
-                      {overviewLoading ? "Loading..." : "No hot topics found"}
+                      {overviewLoading ? "Loading..." : "No events found"}
                     </td>
                   </tr>
                 )}
@@ -1566,13 +1573,20 @@ export default function HomePage() {
                     className="flex h-full flex-col overflow-hidden"
                   >
                     <div className="relative flex-1 min-h-0 w-full">
-                      <Image
-                        src={item.postUrl || "/posts/post-template.png"}
-                        alt={item.brand}
-                        fill
-                        sizes="(min-width: 768px) 220px, 33vw"
-                        className="object-cover"
-                      />
+                      <a
+                        href={item.postLink || "#"}
+                        target={item.postLink ? "_blank" : undefined}
+                        rel={item.postLink ? "noopener noreferrer" : undefined}
+                        className={item.postLink ? "block h-full w-full" : "block h-full w-full pointer-events-none"}
+                      >
+                        <Image
+                          src={item.postUrl || "/posts/post-template.png"}
+                          alt={item.brand}
+                          fill
+                          sizes="(min-width: 768px) 220px, 33vw"
+                          className="object-cover"
+                        />
+                      </a>
                     </div>
                     <div className="shrink-0 flex flex-col items-center justify-center gap-1 border-t border-border bg-muted px-2 py-2">
                       <BrandLink brand={linkBrand} className="h-5 w-full justify-center">

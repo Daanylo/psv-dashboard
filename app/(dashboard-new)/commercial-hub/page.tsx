@@ -217,6 +217,7 @@ export default function CommercialHubPage() {
     posts: {
       id: string
       imageSrc: string
+      url?: string
       date: Date
       likes: number
       comments: number
@@ -236,7 +237,7 @@ export default function CommercialHubPage() {
     }
     trends: { date: string; [key: string]: any }[]
     visibilityShare: { brand: string; value: number }[]
-    missedOpportunities: { id: string; impressions: number; visibilityPct: number; imageSrc: string }[]
+    missedOpportunities: { id: string; impressions: number; visibilityPct: number; imageSrc: string; url?: string }[]
   }>({
     posts: [],
     metrics: {
@@ -830,13 +831,20 @@ export default function CommercialHubPage() {
                     className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
                   >
                     <div className="relative w-full flex-1 min-h-0">
-                      <Image
-                        src={post.imageSrc}
-                        alt="Post"
-                        fill
-                        sizes="(min-width: 1024px) 260px, (min-width: 640px) 33vw, 100vw"
-                        className="object-cover"
-                      />
+                      <a
+                        href={post.url || "#"}
+                        target={post.url ? "_blank" : undefined}
+                        rel={post.url ? "noopener noreferrer" : undefined}
+                        className={post.url ? "block h-full w-full" : "block h-full w-full pointer-events-none"}
+                      >
+                        <Image
+                          src={post.imageSrc}
+                          alt="Post"
+                          fill
+                          sizes="(min-width: 1024px) 260px, (min-width: 640px) 33vw, 100vw"
+                          className="object-cover"
+                        />
+                      </a>
                       {sortConfig.by !== "time" && (
                         <div className="absolute top-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm tracking-tight tabular-nums">
                           {sortConfig.by === "visibility" &&
@@ -1192,13 +1200,20 @@ export default function CommercialHubPage() {
               {missedOpportunities.map((item) => (
                 <div key={item.id} className="flex h-full flex-col overflow-hidden">
                   <div className="relative flex-1 min-h-0 w-full">
-                    <Image
-                      src={item.imageSrc || "/posts/post-template.png"}
-                      alt="Missed opportunity post"
-                      fill
-                      sizes="(min-width: 768px) 220px, 33vw"
-                      className="object-cover"
-                    />
+                    <a
+                      href={item.url || "#"}
+                      target={item.url ? "_blank" : undefined}
+                      rel={item.url ? "noopener noreferrer" : undefined}
+                      className={item.url ? "block h-full w-full" : "block h-full w-full pointer-events-none"}
+                    >
+                      <Image
+                        src={item.imageSrc || "/posts/post-template.png"}
+                        alt="Missed opportunity post"
+                        fill
+                        sizes="(min-width: 768px) 220px, 33vw"
+                        className="object-cover"
+                      />
+                    </a>
                   </div>
                   <div className="shrink-0 flex flex-col items-center justify-center gap-1 border-t border-border bg-muted px-2 py-2">
                     <div className="text-xs text-muted-foreground tabular-nums text-center">

@@ -2,6 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { ArrowRight, Calendar as CalendarIcon, Download, Filter } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -208,6 +209,9 @@ type EventReport = {
 }
 
 export default function EventsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
   const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
@@ -218,6 +222,14 @@ export default function EventsPage() {
   const [report, setReport] = useState<EventReport | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
+
+  const urlMatchId = useMemo(() => {
+    const raw = searchParams.get("match_id")
+    if (!raw) return null
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed)) return null
+    return parsed
+  }, [searchParams])
   
   const defaultEnd = useMemo(() => new Date(), [])
   const defaultStart = useMemo(() => {
@@ -319,6 +331,21 @@ export default function EventsPage() {
   }, [start, end])
 
   useEffect(() => {
+    if (!urlMatchId) return
+    setSelectedMatchId((prev) => (prev === urlMatchId ? prev : urlMatchId))
+  }, [urlMatchId])
+
+  useEffect(() => {
+    if (!selectedMatchId) return
+    const current = searchParams.get("match_id")
+    if (current === String(selectedMatchId)) return
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("match_id", String(selectedMatchId))
+    router.replace(`/events?${params.toString()}`)
+  }, [router, searchParams, selectedMatchId])
+
+  useEffect(() => {
     let cancelled = false
     if (!selectedMatchId) {
       setReport(null)
@@ -351,6 +378,14 @@ export default function EventsPage() {
       cancelled = true
     }
   }, [selectedMatchId])
+
+  useEffect(() => {
+    if (!report?.match) return
+    setMatches((prev) => {
+      if (prev.some((m) => m.id === report.match.id)) return prev
+      return [...prev, report.match]
+    })
+  }, [report?.match])
 
   const selectedMatch = useMemo(() => {
     if (report?.match) return report.match

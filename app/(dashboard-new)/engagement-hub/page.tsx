@@ -3,6 +3,7 @@
 import { PlayerLink } from "@/components/player-link"
 
 import Image from "next/image"
+import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowUpDown,
@@ -95,6 +96,7 @@ type PlayerMentionsStats = {
 
 type HotTopic = {
   rank: number
+  matchId: number
   topic: string
   mentions: number
 }
@@ -1512,7 +1514,7 @@ export default function EngagementHubPage() {
         >
           <div className="px-6 py-4">
             <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">HOT TOPICS</div>
+              <div className="text-base font-semibold font-psv-branding">EVENTS</div>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>
@@ -1522,7 +1524,7 @@ export default function EngagementHubPage() {
               <thead>
                 <tr>
                   <th className="sticky top-0 z-10 w-12 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">#</th>
-                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">TOPIC</th>
+                  <th className="sticky top-0 z-10 bg-muted px-3 py-2 text-left font-semibold text-muted-foreground">EVENT</th>
                   <th className="sticky top-0 z-10 w-24 bg-muted px-3 py-2 text-right font-semibold text-muted-foreground">
                     MENTIONS
                   </th>
@@ -1533,7 +1535,9 @@ export default function EngagementHubPage() {
                   <tr key={index} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
                     <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="px-3 py-2">
-                      <div className="truncate">{row.topic}</div>
+                      <Link href={`/events?match_id=${row.matchId}`} className="block truncate hover:underline">
+                        {row.topic}
+                      </Link>
                     </td>
                     <td className="w-24 px-3 py-2 text-right font-medium tabular-nums">{row.mentions.toLocaleString()}</td>
                   </tr>

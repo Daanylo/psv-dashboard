@@ -136,6 +136,7 @@ async function getMissedOpportunities(start: number, end: number, filterClause: 
     impressions: p.impressions,
     visibilityPct: Number(p.max_visibility || 0),
     imageSrc: p.shortcode ? `https://www.instagram.com/p/${p.shortcode}/media/?size=l` : p.url,
+    url: p.url || (p.shortcode ? `https://www.instagram.com/p/${p.shortcode}/` : ""),
   }))
 }
 
@@ -311,6 +312,7 @@ export async function GET(request: Request) {
     const posts = recentPosts.map(p => ({
       id: p.id.toString(),
       imageSrc: p.shortcode ? `https://www.instagram.com/p/${p.shortcode}/media/?size=l` : p.url,
+      url: p.url || (p.shortcode ? `https://www.instagram.com/p/${p.shortcode}/` : ""),
       date: new Date(p.taken_at_timestamp * 1000), // Convert seconds to ms
       likes: p.like_count,
       comments: p.comment_count,

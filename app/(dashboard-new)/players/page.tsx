@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -152,6 +153,7 @@ type SocialAppearance = {
   id: string
   impressions: number
   imageUrl?: string
+  url?: string
 }
 
 type PlayerReportItem = {
@@ -187,6 +189,7 @@ type BasicPlayer = {
 
 type HotTopic = {
   rank: number
+  matchId: number
   topic: string
   mentions: number
   date: string
@@ -609,13 +612,14 @@ export default function PlayersPage() {
           signal: controller.signal,
         })
         if (!res.ok) throw new Error(`API ${res.status}`)
-        const data = (await res.json()) as { items?: Array<{ id: string; impressions: number; imageUrl?: string }> }
+        const data = (await res.json()) as { items?: SocialAppearance[] }
 
         setSocialAppearances(
           (data.items ?? []).map((item) => ({
             id: item.id,
             impressions: Number(item.impressions ?? 0),
             imageUrl: item.imageUrl,
+            url: item.url,
           })),
         )
       } catch (err: unknown) {
@@ -772,6 +776,7 @@ export default function PlayersPage() {
       if (sourceTopics) {
         return sourceTopics.slice(0, 10).map((t, i) => ({
           rank: i + 1,
+          matchId: t.matchId,
           event: t.topic,
           mentions: t.mentions,
         }))
@@ -1265,7 +1270,9 @@ export default function PlayersPage() {
                   <tr key={row.rank} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
                     <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
                     <td className="px-3 py-2">
-                      <div className="truncate">{row.event}</div>
+                      <Link href={`/events?match_id=${row.matchId}`} className="block truncate hover:underline">
+                        {row.event}
+                      </Link>
                     </td>
                     <td className="w-24 px-3 py-2 text-right font-medium tabular-nums">{row.mentions.toLocaleString()}</td>
                   </tr>
@@ -1370,13 +1377,20 @@ export default function PlayersPage() {
               {socialAppearances.map((item) => (
                 <div key={item.id} className="flex h-full flex-col overflow-hidden">
                   <div className="relative flex-1 min-h-0 w-full">
-                    <Image
-                      src={item.imageUrl || "/posts/post-template.png"}
-                      alt="Tagged post"
-                      fill
-                      sizes="(min-width: 768px) 220px, 33vw"
-                      className="object-cover"
-                    />
+                    <a
+                      href={item.url || "#"}
+                      target={item.url ? "_blank" : undefined}
+                      rel={item.url ? "noopener noreferrer" : undefined}
+                      className={item.url ? "block h-full w-full" : "block h-full w-full pointer-events-none"}
+                    >
+                      <Image
+                        src={item.imageUrl || "/posts/post-template.png"}
+                        alt="Tagged post"
+                        fill
+                        sizes="(min-width: 768px) 220px, 33vw"
+                        className="object-cover"
+                      />
+                    </a>
                   </div>
                   <div className="shrink-0 flex items-center justify-center border-t border-border bg-muted px-2 py-2">
                     <div className="text-xs text-muted-foreground tabular-nums text-center">

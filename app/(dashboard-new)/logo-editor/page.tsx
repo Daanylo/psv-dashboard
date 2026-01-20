@@ -113,6 +113,12 @@ export default function LogoDetectionPage() {
                 </div>
               ) : (
                 posts.map(post => (
+                  (() => {
+                    const externalUrl = post.shortcode
+                      ? `https://www.instagram.com/p/${post.shortcode}/`
+                      : post.url
+
+                    return (
                   <div
                     key={post.id}
                     onClick={() => setSelectedPostId(post.id)}
@@ -125,12 +131,20 @@ export default function LogoDetectionPage() {
                   >
                     <div className="w-12 h-12 bg-muted rounded overflow-hidden flex-shrink-0 relative">
                       {/* Use proxy to avoid CORP/CORS blocking on thumbnails */}
-                       <img 
-                         src={`/api/old/proxy-image?url=${encodeURIComponent(post.shortcode ? `https://www.instagram.com/p/${post.shortcode}/media/?size=t` : post.url)}`}
-                         className="object-cover w-full h-full"
-                         alt="thumb"
-                         loading="lazy"
-                       />
+                      <a
+                        href={externalUrl || "#"}
+                        target={externalUrl ? "_blank" : undefined}
+                        rel={externalUrl ? "noopener noreferrer" : undefined}
+                        className={externalUrl ? "block w-full h-full" : "block w-full h-full pointer-events-none"}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <img 
+                          src={`/api/old/proxy-image?url=${encodeURIComponent(post.shortcode ? `https://www.instagram.com/p/${post.shortcode}/media/?size=t` : post.url)}`}
+                          className="object-cover w-full h-full"
+                          alt="thumb"
+                          loading="lazy"
+                        />
+                      </a>
                     </div>
                     <div className="overflow-hidden">
                       <div className="text-xs font-medium truncate mb-1">
@@ -142,6 +156,8 @@ export default function LogoDetectionPage() {
                       </div>
                     </div>
                   </div>
+                    )
+                  })()
                 ))
               )}
 
@@ -348,7 +364,14 @@ function DetectionEditor({ post, onUpdate }: { post: Post, onUpdate: () => void 
             {/* Toolbar */}
             <div className="p-4 border-b flex items-center justify-between bg-card z-10">
                 <div className="flex items-center gap-2">
-                    <h2 className="font-semibold">{post.url || post.shortcode}</h2>
+                    <a
+                      href={post.shortcode ? `https://www.instagram.com/p/${post.shortcode}/` : post.url || "#"}
+                      target={post.shortcode || post.url ? "_blank" : undefined}
+                      rel={post.shortcode || post.url ? "noopener noreferrer" : undefined}
+                      className={post.shortcode || post.url ? "font-semibold hover:underline" : "font-semibold pointer-events-none"}
+                    >
+                      {post.shortcode ? `instagram.com/p/${post.shortcode}` : post.url}
+                    </a>
                     <span className="text-muted-foreground text-sm">
                         {imageDimensions ? `${imageDimensions.width}x${imageDimensions.height}px` : "Loading..."}
                     </span>

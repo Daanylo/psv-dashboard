@@ -807,13 +807,20 @@ export default function SponsorsReportPage() {
                 topExposures.items.map((item: any) => (
                   <div key={item.id} className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
                     <div className="relative w-full flex-1 min-h-0">
-                      <Image
-                        src={item.imageSrc}
-                        alt="Top exposure"
-                        fill
-                        sizes="(min-width: 1024px) 260px, (min-width: 640px) 33vw, 100vw"
-                        className="object-cover"
-                      />
+                      <a
+                        href={item.url || "#"}
+                        target={item.url ? "_blank" : undefined}
+                        rel={item.url ? "noopener noreferrer" : undefined}
+                        className={item.url ? "block h-full w-full" : "block h-full w-full pointer-events-none"}
+                      >
+                        <Image
+                          src={item.imageSrc}
+                          alt="Top exposure"
+                          fill
+                          sizes="(min-width: 1024px) 260px, (min-width: 640px) 33vw, 100vw"
+                          className="object-cover"
+                        />
+                      </a>
                     </div>
 
                     <div className="shrink-0 h-16 border-t border-border bg-muted px-3 py-3 flex flex-col">

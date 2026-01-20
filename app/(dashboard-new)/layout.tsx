@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Header from "@/components/blocks/header"
 import Sidebar from "@/components/sidebar"
 
 export const metadata: Metadata = {
-  title: "PSV Dashboard",
+  title: "Pulse - PSV Dashboard",
   description: "Dashboard for PSV insights",
 };
 

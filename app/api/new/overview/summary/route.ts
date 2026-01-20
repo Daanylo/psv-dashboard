@@ -14,7 +14,9 @@ import {
   loadHotTopics,
   loadMatches,
   loadMentionAggregates,
+  loadMentionsJourney,
   loadPlayerDirectory,
+  loadPlayerMotmCounts,
   loadPlayerRatings,
   loadSentimentCountsByDay,
   loadPlayerSentimentCountsByDay,
@@ -26,8 +28,37 @@ import {
   toIsoDateOnly,
 } from "@/lib/overview-data"
 
+type CacheEntry<T> = { at: number; value: T }
+
+const CACHE_TTL_MS = 30_000
+const cache = new Map<string, CacheEntry<unknown>>()
+
+function getCached<T>(key: string): T | null {
+  const hit = cache.get(key)
+  if (!hit) return null
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    cache.delete(key)
+    return null
+  }
+  return hit.value as T
+}
+
+function setCached(key: string, value: unknown) {
+  cache.set(key, { at: Date.now(), value })
+  if (cache.size > 50) {
+    const oldestKey = cache.keys().next().value as string | undefined
+    if (oldestKey) cache.delete(oldestKey)
+  }
+}
+
 export async function GET(req: Request) {
   try {
+    const cacheKey = req.url
+    const cached = getCached<OverviewResponse>(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached)
+    }
+
     const url = new URL(req.url)
     const start = parseIsoDateOnly(url.searchParams.get("start"))
     const end = parseIsoDateOnly(url.searchParams.get("end"))
@@ -72,53 +103,61 @@ export async function GET(req: Request) {
     const { aliasToPlayer, allPlayers } = await loadPlayerDirectory()
 
     let currentCountsByDay: Map<string, { total: number; pos: number; neg: number }>
+    let currentPos = 0
+    let currentNeg = 0
+    let prevPos = 0
+    let prevNeg = 0
 
     if (playerId) {
       currentCountsByDay = await loadPlayerSentimentCountsByDay(startTs, endTs, playerId, aliasToPlayer)
+      
+      for (const val of currentCountsByDay.values()) {
+        currentPos += val.pos
+        currentNeg += val.neg
+      }
+
+      const prevCountsByDay = await loadPlayerSentimentCountsByDay(previousStartTs, previousEndTs, playerId, aliasToPlayer)
+      for (const val of prevCountsByDay.values()) {
+        prevPos += val.pos
+        prevNeg += val.neg
+      }
     } else {
       currentCountsByDay = await loadSentimentCountsByDay(startTs, endTs)
+
+      const [currentTotals, prevTotals] =
+        await Promise.all([
+          query<Array<{ positiveCount: number; negativeCount: number }>>(
+            `SELECT
+              SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'positive' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as positiveCount,
+              SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'negative' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as negativeCount
+             FROM instagram_comments ic
+             WHERE ic.created_at IS NOT NULL
+               AND ${createdAtSecondsExpr} >= ?
+               AND ${createdAtSecondsExpr} <= ?`,
+            [startTs, endTs],
+          ),
+          query<Array<{ positiveCount: number; negativeCount: number }>>(
+            `SELECT
+              SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'positive' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as positiveCount,
+              SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'negative' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as negativeCount
+             FROM instagram_comments ic
+             WHERE ic.created_at IS NOT NULL
+               AND ${createdAtSecondsExpr} >= ?
+               AND ${createdAtSecondsExpr} <= ?`,
+            [previousStartTs, previousEndTs],
+          ),
+        ])
+        
+      currentPos = Number(currentTotals[0]?.positiveCount ?? 0)
+      currentNeg = Number(currentTotals[0]?.negativeCount ?? 0)
+      prevPos = Number(prevTotals[0]?.positiveCount ?? 0)
+      prevNeg = Number(prevTotals[0]?.negativeCount ?? 0)
     }
-
-    // TODO: Filter currentTotals/prevTotals by player if needed, but summary stats in header might be desired to stay global?
-    // User request: "except that it only shows stats from the player" for the sentiment journey card.
-    // If we filter, we should probably filter globally?
-    // For now, I'll filter logic for the journey. For the summary totals, I should probably also filter if I want consistency.
-    // But refactoring the SQL queries for totals is messy.
-    // Let's rely on the sentiment journey graph being correct.
-
-    const [currentTotals, prevTotals] =
-      await Promise.all([
-        query<Array<{ positiveCount: number; negativeCount: number }>>(
-          `SELECT
-            SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'positive' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as positiveCount,
-            SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'negative' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as negativeCount
-           FROM instagram_comments ic
-           WHERE ic.created_at IS NOT NULL
-             AND ${createdAtSecondsExpr} >= ?
-             AND ${createdAtSecondsExpr} <= ?`,
-          [startTs, endTs],
-        ),
-        query<Array<{ positiveCount: number; negativeCount: number }>>(
-          `SELECT
-            SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'positive' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as positiveCount,
-            SUM(CASE WHEN LOWER(TRIM(ic.sentiment)) = 'negative' THEN (1 + COALESCE(ic.likes, 0)) ELSE 0 END) as negativeCount
-           FROM instagram_comments ic
-           WHERE ic.created_at IS NOT NULL
-             AND ${createdAtSecondsExpr} >= ?
-             AND ${createdAtSecondsExpr} <= ?`,
-          [previousStartTs, previousEndTs],
-        ),
-      ])
 
     const points =
       granularity === "week"
         ? buildWeeklyPoints(start, end, currentCountsByDay)
         : buildDailyPoints(start, end, currentCountsByDay)
-
-    const currentPos = Number(currentTotals[0]?.positiveCount ?? 0)
-    const currentNeg = Number(currentTotals[0]?.negativeCount ?? 0)
-    const prevPos = Number(prevTotals[0]?.positiveCount ?? 0)
-    const prevNeg = Number(prevTotals[0]?.negativeCount ?? 0)
 
     const summary: SentimentJourneySummary = {
       positiveCount: currentPos,
@@ -130,11 +169,12 @@ export async function GET(req: Request) {
     const matches = await loadMatches(start, end)
     const events = attachMatchesToPoints(points, matches)
 
-    const [currentMentionAgg, previousMentionAgg, hotTopics, playerRatings, topExposures] = await Promise.all([
+    const [currentMentionAgg, previousMentionAgg, hotTopics, playerRatings, motmCounts, topExposures] = await Promise.all([
       loadMentionAggregates(startTs, endTs, aliasToPlayer),
       loadMentionAggregates(previousStartTs, previousEndTs, aliasToPlayer),
       loadHotTopics(startInclusive, endInclusive, currentCountsByDay),
       loadPlayerRatings(startInclusive, endInclusive),
+      loadPlayerMotmCounts(startInclusive, endInclusive, playerId),
       loadTopExposures(startTs, endTs),
     ])
 
@@ -165,11 +205,13 @@ export async function GET(req: Request) {
           shirtNumber: p.shirtNumber,
           position: p.position ?? "Unknown",
           mentions: 0,
+          motm: motmCounts.get(p.fotmobId) ?? 0,
           positivePct: 0,
           avgRating: playerRatings.get(p.fotmobId) ?? null,
           marketValue: p.transferValue,
           goals: p.goals,
           assists: p.assists,
+          countryCode: p.countryCode,
           age: p.age,
         }
 
@@ -186,6 +228,8 @@ export async function GET(req: Request) {
     // No AI summary here - it is loaded separately
     const aiSummary = null
 
+    const mentionsJourney = await loadMentionsJourney(startTs, endTs, granularity, playerId)
+
     const body: OverviewResponse = {
       meta: {
         start: toIsoDateOnly(start),
@@ -200,6 +244,7 @@ export async function GET(req: Request) {
         summary,
         events,
       },
+      mentionsJourney,
       playerMentions: {
         mostPopular,
         mostControversial,
@@ -261,6 +306,7 @@ export async function GET(req: Request) {
       }
     }
 
+    setCached(cacheKey, body)
     return NextResponse.json(body)
   } catch (error) {
     console.error("[overview/summary] error", error)

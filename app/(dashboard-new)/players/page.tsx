@@ -47,6 +47,7 @@ function SentimentJourneyEventOverlay({
   if (!events.length || !points.length) return null
 
   const count = points.length
+  const indexCounts: Record<number, number> = {}
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
@@ -55,10 +56,14 @@ function SentimentJourneyEventOverlay({
           const idx = points.findIndex((p) => p.label === event.xLabel)
           if (idx < 0) return null
 
+          const stackIndex = indexCounts[idx] || 0
+          indexCounts[idx] = stackIndex + 1
+
           const leftPct = ((idx + 0.5) / count) * 100
+          const topOffset = -10 + (stackIndex * 32)
 
           return (
-            <div key={event.id} className="absolute" style={{ left: `${leftPct}%`, top: -10 }}>
+            <div key={event.id} className="absolute" style={{ left: `${leftPct}%`, top: topOffset }}>
               <div className="group pointer-events-auto relative z-10 hover:z-50" style={{ transform: "translateX(-14px)" }}>
                 <div
                   className={
@@ -126,6 +131,7 @@ type SentimentJourneyPoint = {
   positiveCount: number
   negativeCount: number
   negativeDisplay: number
+  totalCount: number
 }
 
 type SentimentJourneySummary = {
@@ -144,6 +150,7 @@ type MentionsPoint = {
 type SocialAppearance = {
   id: string
   impressions: number
+  imageUrl?: string
 }
 
 type PlayerReportItem = {
@@ -152,6 +159,7 @@ type PlayerReportItem = {
   shirtNumber: number | null
   position: string | null
   mentions: number
+  motm: number
   positivePct: number
   avgRating: number | null
   marketValue: number | null
@@ -160,11 +168,36 @@ type PlayerReportItem = {
   age: number | null
 }
 
+type BasicPlayer = {
+  name: string
+  shirtNumber: number | null
+  fotmobId: number
+  transferValue: number | null
+  position: string | null
+  goals: number
+  assists: number
+  countryCode: string | null
+  age: number | null
+  rating: number | null
+  matchesPlayed: number
+  motm: number
+  aliases?: string[]
+}
+
 type HotTopic = {
   rank: number
   topic: string
   mentions: number
   date: string
+}
+
+type PlayerComment = {
+  id: string
+  text: string
+  likes: number
+  sentiment: string
+  date: string
+  playerMentioned: string
 }
 
 type OverviewSummaryResponse = {
@@ -178,6 +211,7 @@ type OverviewSummaryResponse = {
     summary: SentimentJourneySummary
     events: any[]
   }
+  mentionsJourney?: MentionsPoint[]
   playerMentions: {
     mostPopular: any | null
     mostControversial: any | null
@@ -204,88 +238,135 @@ function formatDeltaPct(value: number) {
   return `${value >= 0 ? "+" : "-"}${rounded}%`
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n))
-}
-
-function mulberry32(seed: number) {
-  return function random() {
-    let t = (seed += 0x6d2b79f5)
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
 function percentChange(current: number, previous: number) {
   if (!previous) return current === 0 ? 0 : 100
   return ((current - previous) / previous) * 100
 }
 
-function makeLabels(granularity: JourneyGranularity, points: number) {
-  if (granularity === "weekly") {
-    return Array.from({ length: points }, (_, i) => `W${String(i + 1).padStart(2, "0")}`)
+function getFlagEmoji(countryCode: string | null) {
+  if (!countryCode) return "—"
+  
+  // Custom mapping for common 3-letter codes if necessary
+  const map: Record<string, string> = {
+    "NED": "NL", "BEL": "BE", "USA": "US", "MEX": "MX", "FRA": "FR", 
+    "GER": "DE", "DEU": "DE", "ESP": "ES", "BRA": "BR", "ARG": "AR",
+    "ITA": "IT", "POR": "PT", "ENG": "GB", "GBR": "GB", "MAR": "MA",
+    "ISR": "IL", "CRO": "HR", "BIH": "BA", "ROU": "RO", "CUW": "CW", "BFA": "BF", "CZE": "CZ"
   }
-  return Array.from({ length: points }, (_, i) => `D${String(i + 1).padStart(2, "0")}`)
-}
-
-function makeMockSentimentJourney(granularity: JourneyGranularity, seed: number) {
-  const rand = mulberry32(seed)
-  const points = granularity === "weekly" ? 12 : 24
-  const labels = makeLabels(granularity, points)
-
-  const data: SentimentJourneyPoint[] = labels.map((label, idx) => {
-    const wave = Math.sin((idx / (points - 1)) * Math.PI * 2)
-    const jitter = (rand() - 0.5) * 0.25
-    const base = 0.55 + 0.15 * wave + jitter
-
-    const volume = 520 + Math.round(rand() * 520)
-    const positive = Math.round(volume * clamp(base, 0.25, 0.85))
-    const negative = Math.max(0, volume - positive)
-
-    return {
-      label,
-      positiveCount: positive,
-      negativeCount: negative,
-      negativeDisplay: -negative,
-    }
-  })
-
-  const sumPositive = data.reduce((acc, p) => acc + p.positiveCount, 0)
-  const sumNegative = data.reduce((acc, p) => acc + p.negativeCount, 0)
-
-  return { points: data, positiveCount: sumPositive, negativeCount: sumNegative }
-}
-
-function makeMockMentionsJourney(granularity: JourneyGranularity, seed: number): MentionsPoint[] {
-  const rand = mulberry32(seed)
-  const points = granularity === "weekly" ? 12 : 24
-  const labels = makeLabels(granularity, points)
-
-  return labels.map((label, idx) => {
-    const wave = Math.sin((idx / (points - 1)) * Math.PI * 2)
-    const baselineAvg = 520 + wave * 90
-    const baselinePlayer = 640 + wave * 150
-    const avg = Math.round(clamp(baselineAvg + (rand() - 0.5) * 80, 180, 980))
-    const player = Math.round(clamp(baselinePlayer + (rand() - 0.5) * 120, 240, 1400))
-    return { label, avg, player }
-  })
+  
+  let code = countryCode.toUpperCase()
+  if (map[code]) code = map[code]
+  
+  if (code.length === 2) {
+      const offset = 127397
+      const f = code.split("").map(c => c.charCodeAt(0) + offset)
+      return String.fromCodePoint(...f)
+  }
+  return code
 }
 
 export default function PlayersPage() {
   const [search, setSearch] = useState("")
+  const [commentsSort, setCommentsSort] = useState<"likes" | "time">("likes")
+  const [commentsSentiment, setCommentsSentiment] = useState<"all" | "positive" | "neutral" | "negative">("all")
+  const [commentsData, setCommentsData] = useState<PlayerComment[]>([])
+
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
-  const [customStart, setCustomStart] = useState<Date | undefined>()
-  const [customEnd, setCustomEnd] = useState<Date | undefined>()
+
+  // Custom date range state (defaults to last 30 days)
+  const defaultEnd = useMemo(() => new Date(), [])
+  const defaultStart = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    return d
+  }, [])
+  
+  const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
+  const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
+
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
   const [journeyNormalize, setJourneyNormalize] = useState(false)
 
   const [overview, setOverview] = useState<OverviewSummaryResponse | null>(null)
   const [playerOverview, setPlayerOverview] = useState<OverviewSummaryResponse | null>(null)
+  
+  const [allPlayers, setAllPlayers] = useState<BasicPlayer[]>([])
+  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null)
+
+  const [socialAppearances, setSocialAppearances] = useState<SocialAppearance[]>([])
+
+  const lastPlayerOverviewUrlRef = useRef<string | null>(null)
+  const lastCommentsUrlRef = useRef<string | null>(null)
 
   const mentionsJourneyRef = useRef<HTMLDivElement | null>(null)
   const [eventMentionsHeightPx, setEventMentionsHeightPx] = useState<number | undefined>(undefined)
+
+  const filteredPlayers = useMemo(() => {
+    const q = search.toLowerCase().trim()
+    if (!q) return allPlayers
+    return allPlayers.filter((p) => p.name.toLowerCase().includes(q))
+  }, [allPlayers, search])
+
+  const groupedPlayers = useMemo(() => {
+    const groupKeyForPosition = (pos: string | null) => {
+      const p = (pos ?? "").toUpperCase()
+      if (!p) return "ATT"
+      if (p === "GK" || p.includes("GOALKEEP")) return "GK"
+      if (
+        p.includes("CB") ||
+        p.includes("LB") ||
+        p.includes("RB") ||
+        p.includes("LWB") ||
+        p.includes("RWB") ||
+        p.includes("DEF")
+      ) {
+        return "DEF"
+      }
+      if (p.includes("CDM") || p.includes("CM") || p.includes("CAM") || p.includes("MID")) return "MID"
+      return "ATT"
+    }
+
+    const labelForKey = (key: string) => {
+      switch (key) {
+        case "GK":
+          return "Goalkeepers"
+        case "DEF":
+          return "Defenders"
+        case "MID":
+          return "Midfielders"
+        default:
+          return "Attackers"
+      }
+    }
+
+    const groups = new Map<string, BasicPlayer[]>()
+    for (const player of filteredPlayers) {
+      const key = groupKeyForPosition(player.position)
+      const list = groups.get(key) ?? []
+      list.push(player)
+      groups.set(key, list)
+    }
+
+    for (const [key, list] of groups.entries()) {
+      list.sort((a, b) => a.name.localeCompare(b.name))
+      groups.set(key, list)
+    }
+
+    const orderedKeys = ["GK", "DEF", "MID", "ATT"]
+    return orderedKeys
+      .filter((k) => (groups.get(k)?.length ?? 0) > 0)
+      .map((k) => ({ key: k, label: labelForKey(k), players: groups.get(k) ?? [] }))
+  }, [filteredPlayers])
+
+  useEffect(() => {
+    fetch('/api/new/players')
+      .then(res => res.json())
+      .then(data => {
+        if (data.players) setAllPlayers(data.players)
+      })
+      .catch(console.error)
+  }, [])
 
   useEffect(() => {
     const el = mentionsJourneyRef.current
@@ -302,34 +383,46 @@ export default function PlayersPage() {
     return () => observer.disconnect()
   }, [])
 
+  const dateRangeDays = useMemo(() => {
+    switch (dateRangeKey) {
+      case "7":
+        return 7
+      case "30":
+        return 30
+      case "90":
+        return 90
+      case "365":
+        return 365
+      default:
+        return 30
+    }
+  }, [dateRangeKey])
+
   const { start, end } = useMemo(() => {
     if (dateRangeKey === "custom") {
-      const e = customEnd || new Date()
-      const s = customStart || new Date(new Date().setDate(new Date().getDate() - 30))
-      e.setHours(23, 59, 59, 999)
-      s.setHours(0, 0, 0, 0)
-      return { start: s, end: e }
+      return {
+        start: parseLocalIsoDate(customStart),
+        end: parseLocalIsoDate(customEnd)
+      }
     }
-    const map: Record<string, number> = {
-      "7": 7,
-      "30": 30,
-      "90": 90,
-      "365": 365,
-    }
-    return getDateRange(map[dateRangeKey] || 30, new Date())
-  }, [dateRangeKey, customStart, customEnd])
+    return getDateRange(dateRangeDays, new Date())
+  }, [dateRangeDays, dateRangeKey, customStart, customEnd])
 
   const dateRangeLabel = useMemo(() => `${formatShortDate(start)} - ${formatShortDate(end)}`, [start, end])
 
   const periodLabel = useMemo(() => {
-    if (dateRangeKey === "custom") return "Custom Range"
-    const labels: Record<string, string> = {
-      "7": "Last 7 days",
-      "30": "Last 30 days",
-      "90": "Last 90 days",
-      "365": "Last 365 days",
+    switch (dateRangeKey) {
+      case "7":
+        return "Last 7 days"
+      case "30":
+        return "Last 30 days"
+      case "90":
+        return "Last 90 days"
+      case "365":
+        return "Last 365 days"
+      case "custom":
+        return "Custom period"
     }
-    return labels[dateRangeKey] || "Select period"
   }, [dateRangeKey])
 
   useEffect(() => {
@@ -361,15 +454,43 @@ export default function PlayersPage() {
     return () => controller.abort()
   }, [start, end, journeyGranularity])
 
-  const selectedPlayer = useMemo(() => {
-    if (!overview?.playerMentions?.fullReport?.length) return null
-    // Sort by mentions desc and pick top 1
-    const sorted = [...overview.playerMentions.fullReport].sort((a, b) => b.mentions - a.mentions)
-    return sorted[0]
-  }, [overview])
+  const selectedPlayer = useMemo<PlayerReportItem | null>(() => {
+    if (!selectedPlayerId) return null
+
+    const fromPlayerOverview = playerOverview?.playerMentions?.fullReport?.find(
+      (p) => p.fotmobId === selectedPlayerId,
+    )
+    if (fromPlayerOverview) return fromPlayerOverview
+
+    const fromOverview = overview?.playerMentions?.fullReport?.find(
+      (p) => p.fotmobId === selectedPlayerId,
+    )
+    if (fromOverview) return fromOverview
+
+    const basic = allPlayers.find((p) => p.fotmobId === selectedPlayerId)
+    if (!basic) return null
+
+    return {
+      name: basic.name,
+      fotmobId: basic.fotmobId,
+      shirtNumber: basic.shirtNumber,
+      position: basic.position,
+      mentions: 0,
+      motm: 0,
+      positivePct: 0,
+      avgRating: null,
+      marketValue: basic.transferValue,
+      goals: basic.goals,
+      assists: basic.assists,
+      age: basic.age,
+    }
+  }, [selectedPlayerId, allPlayers, overview, playerOverview])
 
   useEffect(() => {
-    if (!selectedPlayer) return
+    if (!selectedPlayerId) {
+      setPlayerOverview(null)
+      return
+    }
 
     const controller = new AbortController()
     const run = async () => {
@@ -378,9 +499,13 @@ export default function PlayersPage() {
         url.searchParams.set("start", toIsoDateOnly(start))
         url.searchParams.set("end", toIsoDateOnly(end))
         url.searchParams.set("granularity", journeyGranularity === "weekly" ? "week" : "day")
-        url.searchParams.set("player_id", String(selectedPlayer.fotmobId))
+        url.searchParams.set("player_id", String(selectedPlayerId))
 
-        const res = await fetch(url.toString(), {
+        const requestUrl = url.toString()
+        if (lastPlayerOverviewUrlRef.current === requestUrl) return
+        lastPlayerOverviewUrlRef.current = requestUrl
+
+        const res = await fetch(requestUrl, {
           cache: "no-store",
           signal: controller.signal,
         })
@@ -395,7 +520,82 @@ export default function PlayersPage() {
 
     void run()
     return () => controller.abort()
-  }, [selectedPlayer, start, end, journeyGranularity])
+  }, [selectedPlayerId, start, end, journeyGranularity])
+
+  useEffect(() => {
+     if (!selectedPlayerId) {
+         setCommentsData([])
+         return
+     }
+
+     const controller = new AbortController()
+     const run = async () => {
+         try {
+             const url = new URL("/api/new/players/comments", window.location.origin)
+             url.searchParams.set("start", toIsoDateOnly(start))
+             url.searchParams.set("end", toIsoDateOnly(end))
+             url.searchParams.set("player_id", String(selectedPlayerId))
+             url.searchParams.set("sort", commentsSort)
+             url.searchParams.set("sentiment", commentsSentiment)
+
+           const requestUrl = url.toString()
+           if (lastCommentsUrlRef.current === requestUrl) return
+           lastCommentsUrlRef.current = requestUrl
+
+           const res = await fetch(requestUrl, {
+                 signal: controller.signal
+             })
+             if (res.ok) {
+                 const data = await res.json()
+                 setCommentsData(data.comments || [])
+             }
+         } catch(e: unknown) {
+             if (e instanceof DOMException && e.name === "AbortError") return
+             console.error(e)
+         }
+     }
+     void run()
+     return () => controller.abort()
+    }, [selectedPlayerId, start, end, commentsSort, commentsSentiment])
+
+  useEffect(() => {
+    if (!selectedPlayerId) {
+      setSocialAppearances([])
+      return
+    }
+
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        const url = new URL("/api/new/players/social-appearances", window.location.origin)
+        url.searchParams.set("start", toIsoDateOnly(start))
+        url.searchParams.set("end", toIsoDateOnly(end))
+        url.searchParams.set("player_id", String(selectedPlayerId))
+
+        const res = await fetch(url.toString(), {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`API ${res.status}`)
+        const data = (await res.json()) as { items?: Array<{ id: string; impressions: number; imageUrl?: string }> }
+
+        setSocialAppearances(
+          (data.items ?? []).map((item) => ({
+            id: item.id,
+            impressions: Number(item.impressions ?? 0),
+            imageUrl: item.imageUrl,
+          })),
+        )
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+        console.error(err)
+        setSocialAppearances([])
+      }
+    }
+
+    void run()
+    return () => controller.abort()
+  }, [selectedPlayerId, start, end])
 
   const player = useMemo(
     () => {
@@ -420,11 +620,14 @@ export default function PlayersPage() {
           ? `€${(selectedPlayer.marketValue / 1_000_000).toFixed(1)}M`
           : `€${(selectedPlayer.marketValue / 1_000).toFixed(0)}K`
         : "—"
+        
+      const basicInfo = allPlayers.find(p => p.fotmobId === selectedPlayer.fotmobId)
+      const flag = getFlagEmoji(basicInfo?.countryCode || null)
 
       return {
         firstName,
         lastName,
-        flag: "🇳🇱", // Placeholder
+        flag, 
         position: selectedPlayer.position || "—",
         age: selectedPlayer.age ? `${selectedPlayer.age}y` : "—",
         imageSrc: selectedPlayer.shirtNumber 
@@ -433,57 +636,50 @@ export default function PlayersPage() {
         marketValue: mv,
       }
     },
-    [selectedPlayer]
+    [selectedPlayer, allPlayers]
   )
 
   const heroStats = useMemo(
     () => {
-        if (!selectedPlayer) {
+        const overall = selectedPlayerId
+          ? allPlayers.find((p) => p.fotmobId === selectedPlayerId) ?? null
+          : null
+
+        if (!overall) {
              return [
-                { label: "MENTIONS", value: "—" },
-                { label: "MARKET VALUE", value: "—" },
-                { label: "AVG PERFORMANCE", value: "—" },
-                { label: "GOALS", value: "—" },
-                { label: "ASSISTS", value: "—" },
+               { label: "MATCHES PLAYED", value: "—" },
+               { label: "AVG PERFORMANCE", value: "—" },
+               { label: "GOALS", value: "—" },
+               { label: "ASSISTS", value: "—" },
+               { label: "MOTM", value: "—" },
              ]
         }
-        
-        const mv = selectedPlayer.marketValue
-        ? selectedPlayer.marketValue >= 1_000_000
-          ? `€${(selectedPlayer.marketValue / 1_000_000).toFixed(1)}M`
-          : `€${(selectedPlayer.marketValue / 1_000).toFixed(0)}K`
-        : "—"
 
       return [
-        { label: "MENTIONS", value: selectedPlayer.mentions.toLocaleString() },
-        { label: "MARKET VALUE", value: mv },
-        { label: "AVG PERFORMANCE", value: selectedPlayer.avgRating ? selectedPlayer.avgRating.toFixed(1) : "-" },
-        { label: "GOALS", value: selectedPlayer.goals.toString() },
-        { label: "ASSISTS", value: selectedPlayer.assists.toString() },
+        { label: "MATCHES PLAYED", value: overall.matchesPlayed.toLocaleString() },
+        { label: "AVG PERFORMANCE", value: overall.rating !== null ? overall.rating.toFixed(1) : "-" },
+        { label: "GOALS", value: overall.goals.toString() },
+        { label: "ASSISTS", value: overall.assists.toString() },
+        { label: "MOTM", value: overall.motm.toLocaleString() },
       ] as const
     },
-    [selectedPlayer]
+    [allPlayers, selectedPlayerId]
   )
 
   const sentimentJourney = useMemo(() => {
-    // Prefer player-specific data if available, else standard overview (but playerOverview is better for this card)
+    // Prefer player-specific data if available, else standard overview
     const source = playerOverview || overview
     if (source?.sentimentJourney) {
       return source.sentimentJourney
     }
-    const seedBase = Number(dateRangeKey) * 1000 + (journeyGranularity === "weekly" ? 77 : 33)
-    const current = makeMockSentimentJourney(journeyGranularity, seedBase + 1)
-    const previous = makeMockSentimentJourney(journeyGranularity, seedBase + 999)
-
-    const summary: SentimentJourneySummary = {
-      positiveCount: current.positiveCount,
-      negativeCount: current.negativeCount,
-      positiveChangePct: percentChange(current.positiveCount, previous.positiveCount),
-      negativeChangePct: percentChange(current.negativeCount, previous.negativeCount),
+    
+    // Return empty state if data not loaded
+    return { 
+        points: [], 
+        summary: { positiveCount: 0, negativeCount: 0, positiveChangePct: 0, negativeChangePct: 0 },
+        events: [],
     }
-
-    return { points: current.points, summary }
-  }, [dateRangeKey, journeyGranularity, overview, playerOverview])
+  }, [overview, playerOverview])
 
   // Process data for the chart: normalize if needed
   const sentimentJourneyData = useMemo(() => {
@@ -534,134 +730,79 @@ export default function PlayersPage() {
   }, [sentimentJourney.points])
 
   const mentionsJourney = useMemo(() => {
-    const seedBase = Number(dateRangeKey) * 1000 + (journeyGranularity === "weekly" ? 707 : 303)
-    return makeMockMentionsJourney(journeyGranularity, seedBase)
-  }, [dateRangeKey, journeyGranularity])
+    if (playerOverview?.mentionsJourney) return playerOverview.mentionsJourney
+    return overview?.mentionsJourney || []
+  }, [overview, playerOverview])
 
   const eventMentions = useMemo(
     () => {
-      if (overview?.hotTopics) {
-        return overview.hotTopics.slice(0, 10).map((t, i) => ({
+      const sourceTopics = playerOverview?.hotTopics || overview?.hotTopics
+      if (sourceTopics) {
+        return sourceTopics.slice(0, 10).map((t, i) => ({
           rank: i + 1,
           event: t.topic,
           mentions: t.mentions,
         }))
       }
 
-      return [
-        { rank: 1, event: "AZ 1 - 5 PSV", mentions: 1240 },
-        { rank: 2, event: "Winactie PSV tenue", mentions: 980 },
-        { rank: 3, event: "Champions League group draw", mentions: 860 },
-        { rank: 4, event: "Goal in the 89th minute", mentions: 740 },
-        { rank: 5, event: "Man of the Match interview", mentions: 690 },
-        { rank: 6, event: "Pre-season training clip", mentions: 640 },
-        { rank: 7, event: "Assist vs Feyenoord", mentions: 610 },
-        { rank: 8, event: "Injury update", mentions: 580 },
-        { rank: 9, event: "Contract extension rumours", mentions: 540 },
-        { rank: 10, event: "Away day atmosphere", mentions: 510 },
-      ]
+      return []
     },
-    [overview]
+    [overview, playerOverview]
   )
-
-  const playerMentions = useMemo(
-    () =>
-      (
-        [
-          { rank: 1, comment: "Bakayoko was unstoppable today — what a performance.", likes: 221 },
-          { rank: 2, comment: "That run and the cut-back from Bakayoko changed the game.", likes: 198 },
-          { rank: 3, comment: "Bakayoko needs to start every match, he brings so much threat.", likes: 174 },
-          { rank: 4, comment: "Great link-up play, but Bakayoko must be more clinical.", likes: 155 },
-          { rank: 5, comment: "Bakayoko tracking back + pressing has been top lately.", likes: 141 },
-          { rank: 6, comment: "Is Bakayoko already worth €30m?", likes: 126 },
-          { rank: 7, comment: "Bakayoko + Veerman connection is elite.", likes: 118 },
-          { rank: 8, comment: "One touch too many from Bakayoko in the box.", likes: 104 },
-          { rank: 9, comment: "Bakayoko’s pace on the wing is terrifying.", likes: 99 },
-          { rank: 10, comment: "Bakayoko with another assist — love it.", likes: 92 },
-        ] as const
-      ),
-    []
-  )
-
-  const socialAppearances = useMemo(() => {
-    const posts: SocialAppearance[] = [
-      { id: "p1", impressions: 236_000 },
-      { id: "p2", impressions: 188_500 },
-      { id: "p3", impressions: 156_200 },
-    ]
-
-    return posts
-  }, [])
-
   return (
     <main className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
-          />
+         <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search..."
+          className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
+         />
         </div>
 
         <div className="flex items-center gap-2">
-          {dateRangeKey === "custom" && (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">From</span>
-                <input
-                  type="date"
-                  value={customStart ? toIsoDateOnly(customStart) : ""}
-                  onChange={(e) => {
-                    if (!e.target.value) {
-                      setCustomStart(undefined)
-                      return
-                    }
-                    setCustomStart(parseLocalIsoDate(e.target.value))
-                  }}
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">To</span>
-                <input
-                  type="date"
-                  value={customEnd ? toIsoDateOnly(customEnd) : ""}
-                  onChange={(e) => {
-                    if (!e.target.value) {
-                      setCustomEnd(undefined)
-                      return
-                    }
-                    setCustomEnd(parseLocalIsoDate(e.target.value))
-                  }}
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-              <Separator orientation="vertical" className="h-6" />
-            </>
-          )}
-
-          <div className="inline-flex items-stretch">
-            <div
-              className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm"
-              aria-hidden="true"
-            >
-              <CalendarIcon className="h-4 w-4" />
-              <span>{dateRangeLabel}</span>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-stretch">
+            {dateRangeKey === "custom" ? (
+                <div className="border-input bg-background flex h-9 items-center gap-2 rounded-l-md border border-r-0 px-2">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    max={customEnd}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                  <span className="text-muted-foreground">-</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    min={customStart}
+                    max={toIsoDateOnly(defaultEnd)}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                </div>
+              ) : (
+                <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+                  <CalendarIcon className="h-4 w-4" />
+                  {dateRangeLabel}
+                </div>
+              )}
+              <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
+                <SelectTrigger className="h-9 rounded-l-none border-l-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="365">Last 365 days</SelectItem>
+                  <Separator className="my-1" />
+                  <SelectItem value="custom">Custom Range</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
-              <SelectTrigger className="h-9 min-w-[140px] rounded-l-none border-l-0 bg-background font-medium hover:bg-accent hover:text-accent-foreground focus:ring-0">
-                <SelectValue>{periodLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
-                <SelectItem value="365">Last 365 days</SelectItem>
-                <SelectItem value="custom">Custom Range</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
           <div className="relative">
@@ -673,7 +814,7 @@ export default function PlayersPage() {
               aria-expanded={isFilterOpen}
             >
               <Filter className="h-4 w-4" />
-              <span>Filter</span>
+              <span>Player</span>
             </button>
 
             {isFilterOpen ? (
@@ -681,7 +822,35 @@ export default function PlayersPage() {
                 role="menu"
                 className="bg-popover text-popover-foreground absolute right-0 top-full z-50 mt-2 w-64 rounded-md border p-2 text-sm shadow-md"
               >
-                <div className="px-2 py-1.5 text-muted-foreground">No filters yet</div>
+                <div className="max-h-60 overflow-y-auto space-y-3">
+                  {groupedPlayers.length === 0 ? (
+                    <div className="px-2 py-1 text-xs text-muted-foreground">No players found</div>
+                  ) : (
+                    groupedPlayers.map((group) => (
+                      <div key={group.key}>
+                        <div className="px-2 pb-1 text-[11px] font-semibold text-muted-foreground">{group.label}</div>
+                        <div className="space-y-1">
+                          {group.players.map((p) => (
+                            <button
+                              key={p.fotmobId}
+                              onClick={() => {
+                                setSelectedPlayerId(p.fotmobId)
+                                setIsFilterOpen(false)
+                              }}
+                              className={cn(
+                                "w-full text-left px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between",
+                                selectedPlayerId === p.fotmobId && "bg-accent text-accent-foreground",
+                              )}
+                            >
+                              <span className="truncate">{p.name}</span>
+                              <span className="text-xs text-muted-foreground">{getFlagEmoji(p.countryCode)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             ) : null}
           </div>
@@ -696,6 +865,15 @@ export default function PlayersPage() {
         </div>
       </div>
 
+      {!selectedPlayer ? (
+         <div className="flex h-[400px] w-full items-center justify-center rounded-xl border border-dashed border-border bg-background/50">
+            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+               <Filter className="h-8 w-8 opacity-50" />
+               <p className="font-medium">Please select a player to view detailed statistics</p>
+            </div>
+         </div>
+      ) : (
+      <>
       <div className="relative">
         <div className="pointer-events-none absolute left-6 bottom-0 z-20">
           <Image
@@ -1060,6 +1238,13 @@ export default function PlayersPage() {
                     <td className="w-24 px-3 py-2 text-right font-medium tabular-nums">{row.mentions.toLocaleString()}</td>
                   </tr>
                 ))}
+                {eventMentions.length === 0 && (
+                   <tr>
+                     <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
+                        No significant events found
+                     </td>
+                   </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1071,20 +1256,33 @@ export default function PlayersPage() {
           <div className="flex items-center justify-between gap-3 px-6 py-4">
             <div className="text-base font-semibold font-psv-branding">PLAYER MENTIONS</div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-              >
-                <Filter className="h-4 w-4" />
-                <span>Filter</span>
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground hover:bg-accent"
-              >
-                <ArrowUpDown className="h-4 w-4" />
-                <span>Sort</span>
-              </button>
+              <Select value={commentsSentiment} onValueChange={(v: any) => setCommentsSentiment(v)}>
+                <SelectTrigger className="h-9 min-w-[100px]">
+                   <div className="flex items-center gap-2">
+                     <Filter className="h-4 w-4" />
+                     <SelectValue placeholder="Sentiment" />
+                   </div>
+                </SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="all">All Sentiments</SelectItem>
+                   <SelectItem value="positive">Positive</SelectItem>
+                   <SelectItem value="neutral">Neutral</SelectItem>
+                   <SelectItem value="negative">Negative</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={commentsSort} onValueChange={(v: any) => setCommentsSort(v)}>
+                <SelectTrigger className="h-9 min-w-[120px]">
+                   <div className="flex items-center gap-2">
+                     <ArrowUpDown className="h-4 w-4" />
+                     <SelectValue placeholder="Sort" />
+                   </div>
+                </SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="likes">Most Liked</SelectItem>
+                   <SelectItem value="time">Newest</SelectItem>
+                </SelectContent>
+              </Select>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>
@@ -1101,20 +1299,29 @@ export default function PlayersPage() {
                 </tr>
               </thead>
               <tbody>
-                {playerMentions
-                  .filter((row) => {
-                    if (!search.trim()) return true
-                    return row.comment.toLowerCase().includes(search.trim().toLowerCase())
-                  })
+                {commentsData
                   .map((row, index) => (
-                    <tr key={row.rank} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
-                      <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{row.rank}</td>
+                    <tr key={row.id} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
+                      <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{index + 1}</td>
                       <td className="px-3 py-2">
-                        <div className="truncate">{row.comment}</div>
+                         <div className="truncate" title={row.text}>{row.text}</div>
+                         <div className="mt-0.5 text-[10px] text-muted-foreground">
+                             {[
+                                 new Date(row.date).toLocaleDateString(),
+                                 row.sentiment
+                             ].filter(Boolean).join(" • ")}
+                         </div>
                       </td>
                       <td className="w-20 px-3 py-2 text-right font-medium tabular-nums">{row.likes.toLocaleString()}</td>
                     </tr>
                   ))}
+                  {commentsData.length === 0 && (
+                      <tr>
+                          <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
+                             {selectedPlayer ? "No comments found matching filters" : "Select a player to view comments"}
+                          </td>
+                      </tr>
+                  )}
               </tbody>
             </table>
           </div>
@@ -1132,7 +1339,7 @@ export default function PlayersPage() {
                 <div key={item.id} className="flex h-full flex-col overflow-hidden">
                   <div className="relative flex-1 min-h-0 w-full">
                     <Image
-                      src="/posts/post-template.png"
+                      src={item.imageUrl || "/posts/post-template.png"}
                       alt="Tagged post"
                       fill
                       sizes="(min-width: 768px) 220px, 33vw"
@@ -1146,10 +1353,17 @@ export default function PlayersPage() {
                   </div>
                 </div>
               ))}
+              {socialAppearances.length === 0 && (
+                <div className="col-span-3 flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No tagged posts found for this period
+                </div>
+              )}
             </div>
           </div>
         </div>
       </section>
+      </>
+      )}
     </main>
   )
 }

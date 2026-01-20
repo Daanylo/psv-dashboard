@@ -26,6 +26,21 @@ export type SentimentJourneyEvent = {
   subtitle: string
 }
 
+export type MentionsPoint = {
+  label: string
+  player: number
+  avg: number
+}
+
+export type PlayerComment = {
+  id: string
+  text: string
+  likes: number
+  sentiment: string
+  date: string
+  playerMentioned: string
+}
+
 export type MentionedPlayer = {
   name: string
   shirtNumber: number | null
@@ -48,11 +63,13 @@ export type PlayerReportItem = {
   shirtNumber: number | null
   position: string | null
   mentions: number
+  motm: number
   positivePct: number
   avgRating: number | null
   marketValue: number | null
   goals: number
   assists: number
+  countryCode: string | null
   age: number | null
 }
 
@@ -84,6 +101,7 @@ export type OverviewResponse = {
     summary: SentimentJourneySummary
     events: SentimentJourneyEvent[]
   }
+  mentionsJourney: MentionsPoint[]
   playerMentions: {
     mostPopular: MentionedPlayer | null
     mostControversial: MentionedPlayer | null
@@ -138,12 +156,7 @@ export function labelForDateUtc(date: Date) {
   })
 }
 
-export const createdAtSecondsExpr =
-  "(CASE " +
-  "WHEN ic.created_at > 100000000000000 THEN FLOOR(ic.created_at / 1000000) " +
-  "WHEN ic.created_at > 1000000000000 THEN FLOOR(ic.created_at / 1000) " +
-  "ELSE FLOOR(ic.created_at) " +
-  "END)"
+export const createdAtSecondsExpr = "ic.created_at_ts"
 
 export async function loadSentimentCountsByDay(startTs: number, endTs: number) {
   const rows = await query<
@@ -278,7 +291,9 @@ export type PlayerRow = {
   goals: number | null
   assists: number | null
   position_ids_desc: string | null
+  country_code: string | null
   age: number | null
+  rating: number | string | null
 }
 
 export function stripDiacritics(value: string) {
@@ -319,9 +334,37 @@ export function parseListText(value: string): string[] {
 
 export async function loadPlayerDirectory() {
   const players = await query<PlayerRow[]>(
-    `SELECT fotmob_id, name, shirt_number, aliases, transfer_value, position_group, goals, assists, position_ids_desc, age
+    `SELECT fotmob_id, name, shirt_number, aliases, transfer_value, position_group, goals, assists, position_ids_desc, country_code, age, rating
      FROM players`,
   )
+
+  const matchesPlayedRows = await query<Array<{ player_id: number; matchesPlayed: number }>>(
+    `SELECT player_id, COUNT(*) as matchesPlayed
+     FROM player_match_performance
+     WHERE minutes_played > 0
+     GROUP BY player_id`,
+  )
+
+  const motmRows = await query<Array<{ player_id: number; motmCount: number }>>(
+    `SELECT
+       player_id,
+       COUNT(*) as motmCount
+     FROM player_match_performance pmp
+     WHERE minutes_played > 0
+       AND fun_facts IS NOT NULL
+       AND JSON_SEARCH(pmp.fun_facts, 'one', 'fun_fact_motm', NULL, '$[*].key') IS NOT NULL
+     GROUP BY player_id`,
+  )
+
+  const matchesPlayedByPlayer = new Map<number, number>()
+  for (const row of matchesPlayedRows) {
+    matchesPlayedByPlayer.set(Number(row.player_id), Number(row.matchesPlayed ?? 0))
+  }
+
+  const motmByPlayer = new Map<number, number>()
+  for (const row of motmRows) {
+    motmByPlayer.set(Number(row.player_id), Number(row.motmCount ?? 0))
+  }
 
   type PlayerCanonical = {
     name: string
@@ -331,7 +374,12 @@ export async function loadPlayerDirectory() {
     position: string | null
     goals: number
     assists: number
+    countryCode: string | null
     age: number | null
+    aliases: string[]
+    rating: number | null
+    matchesPlayed: number
+    motm: number
   }
 
   const aliasToPlayer = new Map<string, PlayerCanonical>()
@@ -346,6 +394,11 @@ export async function loadPlayerDirectory() {
       }
     }
 
+    const playerAliases: string[] = []
+    if (player.aliases) {
+        playerAliases.push(...parseListText(player.aliases))
+    }
+
     const canonical: PlayerCanonical = {
       name: player.name,
       shirtNumber:
@@ -357,7 +410,12 @@ export async function loadPlayerDirectory() {
       position: pos,
       goals: Number(player.goals ?? 0),
       assists: Number(player.assists ?? 0),
+      countryCode: player.country_code,
       age: player.age !== null ? Number(player.age) : null,
+      aliases: playerAliases,
+      rating: player.rating !== null && player.rating !== undefined ? Number(player.rating) : null,
+      matchesPlayed: matchesPlayedByPlayer.get(Number(player.fotmob_id)) ?? 0,
+      motm: motmByPlayer.get(Number(player.fotmob_id)) ?? 0,
     }
 
     allPlayers.push(canonical)
@@ -371,12 +429,7 @@ export async function loadPlayerDirectory() {
     }
 
     addAlias(player.name)
-
-    if (player.aliases) {
-      for (const alias of parseListText(player.aliases)) {
-        addAlias(alias)
-      }
-    }
+    playerAliases.forEach(addAlias)
   }
 
   return { aliasToPlayer, allPlayers }
@@ -399,6 +452,36 @@ export async function loadPlayerRatings(start: Date, end: Date) {
   const map = new Map<number, number>()
   for (const row of rows) {
     map.set(row.player_id, Number(row.rating))
+  }
+  return map
+}
+
+export async function loadPlayerMotmCounts(start: Date, end: Date, playerId?: number | null) {
+  const startStr = `${toIsoDateOnly(start)} 00:00:00`
+  const endStr = `${toIsoDateOnly(end)} 23:59:59`
+
+  const params: Array<string | number> = [startStr, endStr]
+  const playerClause = playerId ? "AND pmp.player_id = ?" : ""
+  if (playerId) params.push(playerId)
+
+  const rows = await query<Array<{ player_id: number; motmCount: number }>>(
+    `SELECT
+        pmp.player_id,
+        COUNT(*) as motmCount
+     FROM player_match_performance pmp
+     WHERE pmp.match_date IS NOT NULL
+       AND pmp.match_date >= ?
+       AND pmp.match_date <= ?
+       ${playerClause}
+       AND pmp.fun_facts IS NOT NULL
+       AND JSON_SEARCH(pmp.fun_facts, 'one', 'fun_fact_motm', NULL, '$[*].key') IS NOT NULL
+     GROUP BY pmp.player_id`,
+    params,
+  )
+
+  const map = new Map<number, number>()
+  for (const row of rows) {
+    map.set(Number(row.player_id), Number(row.motmCount ?? 0))
   }
   return map
 }
@@ -587,7 +670,7 @@ export async function loadMatches(start: Date, end: Date) {
        AND match_utc_time >= ?
        AND match_utc_time <= ?
      ORDER BY match_utc_time DESC
-     LIMIT 12`,
+     LIMIT 100`,
     [startStr, endStr],
   )
 
@@ -775,4 +858,290 @@ export async function loadPlayerSentimentCountsByDay(
   }
 
   return map
+}
+
+export async function loadPlayerComments(
+  startTs: number,
+  endTs: number,
+  targetFotmobId: number,
+  aliasToPlayer: Map<string, { fotmobId: number }>,
+  sort: "likes" | "time",
+  sentimentFilter: "all" | "positive" | "neutral" | "negative",
+  searchTerms: string[] = [],
+  limit = 50,
+) {
+  let sentimentClause = ""
+  const params: (number | string)[] = [startTs, endTs]
+    
+    if (sentimentFilter !== "all") {
+      sentimentClause = "AND LOWER(TRIM(ic.sentiment)) = ?"
+      params.push(sentimentFilter)
+    }
+
+    // Build LIKE clauses for player mentions
+    // We only fetch rows where player_mentioned contains one of the alias names
+    // player_mentioned is a string representation of a list: "['Name 1', 'Name 2']" or similar
+    // We use %Name% to be safe.
+    let likeClause = ""
+    if (searchTerms.length > 0) {
+        // Filter out very short aliases to avoid false positives (e.g. "Jo")
+        // But if the name IS "Jo", we might have to use it.
+        // Let's rely on the calling code to provide good terms.
+        const validTerms = searchTerms.filter(t => t.length > 2);
+        
+        if (validTerms.length > 0) {
+            const orParts = validTerms.map(() => "ic.player_mentioned LIKE ?")
+            likeClause = `AND (${orParts.join(" OR ")})`
+            validTerms.forEach(t => params.push(`%${t}%`))
+        }
+    }
+
+    // We have to filter by player in JS to get exact matches,
+    // so we may need to fetch more rows than 'limit' initially if we relied on DB limit,
+    // but since we can't reliably filter by player in SQL (messy json/string),
+    // we'll fetch broader set (maybe with a sane hard limit 1000?) and then filter & sort & slice in JS.
+    // BUT if we sort by likes in SQL, we might get top liked comments that ARENT about the player.
+    // So we must fetch ALL potential candidates, distinct by player mention being present.
+
+    const rows = await query<{
+      created_at_ts: number
+      sentiment: string
+      likes: number
+      player_mentioned: string | null
+      text: string
+      id: number
+    }[]>(
+      `SELECT
+         ${createdAtSecondsExpr} as created_at_ts,
+         ic.sentiment,
+         ic.likes,
+         ic.player_mentioned,
+         ic.text,
+         ic.id
+       FROM instagram_comments ic
+       WHERE ic.created_at IS NOT NULL
+         AND ${createdAtSecondsExpr} >= ?
+         AND ${createdAtSecondsExpr} <= ?
+         AND ic.player_mentioned IS NOT NULL
+         ${sentimentClause}
+         ${likeClause}`,
+      params,
+    )
+
+  const relevantComments: PlayerComment[] = []
+
+  // Filter results in JS
+  for (const row of rows) {
+    if (!row.player_mentioned) continue
+
+    const players = parseListText(row.player_mentioned)
+    const uniqueKeys = new Set(players.map((p) => normalizeName(p)).filter(Boolean))
+
+    let relevant = false
+    for (const key of uniqueKeys) {
+      const p = aliasToPlayer.get(key)
+      if (p && p.fotmobId === targetFotmobId) {
+        relevant = true
+        break
+      }
+    }
+
+    if (relevant) {
+      relevantComments.push({
+        id: row.id.toString(),
+        text: row.text,
+        likes: row.likes || 0,
+        sentiment: (row.sentiment || "").trim().toLowerCase(),
+        date: new Date(row.created_at_ts * 1000).toISOString(),
+        playerMentioned: row.player_mentioned,
+      })
+    }
+  }
+
+  // Sort
+  relevantComments.sort((a, b) => {
+    if (sort === "likes") {
+       if (b.likes !== a.likes) return b.likes - a.likes
+       return new Date(b.date).getTime() - new Date(a.date).getTime()
+    } else {
+       return new Date(b.date).getTime() - new Date(a.date).getTime()
+    }
+  })
+
+  return relevantComments.slice(0, limit)
+}
+
+export async function loadMentionsJourney(
+  startTs: number,
+  endTs: number,
+  granularity: Granularity,
+  playerId?: number | null,
+) {
+  // Query daily totals for ALL players (to calculate avg)
+  const allRows = await query<{
+    created_at_ts: number
+    likes: number
+  }[]>(
+    `SELECT
+       ${createdAtSecondsExpr} as created_at_ts,
+       ic.likes
+     FROM instagram_comments ic
+     WHERE ic.created_at IS NOT NULL
+       AND ${createdAtSecondsExpr} >= ?
+       AND ${createdAtSecondsExpr} <= ?
+       AND ic.player_mentioned IS NOT NULL`,
+    [startTs, endTs],
+  )
+    
+  // If specific player requested, query just their mentions
+  let playerRows: typeof allRows = []
+  if (playerId) {
+    const { aliasToPlayer } = await loadPlayerDirectory()
+    const pRowsRaw = await query<{
+        created_at_ts: number
+        likes: number
+        player_mentioned: string
+    }[]>(
+        `SELECT
+        ${createdAtSecondsExpr} as created_at_ts,
+        ic.likes,
+        ic.player_mentioned
+        FROM instagram_comments ic
+        WHERE ic.created_at IS NOT NULL
+        AND ${createdAtSecondsExpr} >= ?
+        AND ${createdAtSecondsExpr} <= ?
+        AND ic.player_mentioned IS NOT NULL`,
+        [startTs, endTs],
+    )
+
+    // Filter in JS because player_mentioned is a messy list string
+    for (const row of pRowsRaw) {
+        if (!row.player_mentioned) continue
+        const players = parseListText(row.player_mentioned)
+        const uniqueKeys = new Set(players.map((p) => normalizeName(p)).filter(Boolean))
+        let relevant = false
+        for (const key of uniqueKeys) {
+            const p = aliasToPlayer.get(key)
+            if (p && p.fotmobId === playerId) {
+            relevant = true
+            break
+            }
+        }
+        if (relevant) {
+            playerRows.push({ created_at_ts: row.created_at_ts, likes: row.likes })
+        }
+    }
+  }
+
+  // Aggregate by day
+  const dailyMap = new Map<string, { total: number; player: number }>()
+  
+  // Total bucket (all players)
+  for (const row of allRows) {
+    const d = new Date(row.created_at_ts * 1000)
+    const key = toIsoDateOnly(d)
+    if (!dailyMap.has(key)) dailyMap.set(key, { total: 0, player: 0 })
+    dailyMap.get(key)!.total += (1 + (row.likes || 0))
+  }
+
+  // Player bucket
+  if (playerId) {
+     for (const row of playerRows) {
+        const d = new Date(row.created_at_ts * 1000)
+        const key = toIsoDateOnly(d)
+        if (!dailyMap.has(key)) dailyMap.set(key, { total: 0, player: 0 })
+        dailyMap.get(key)!.player += (1 + (row.likes || 0))
+     }
+  }
+
+  // Now build points based on granularity
+  const startDate = new Date(startTs * 1000)
+  const endDate = new Date(endTs * 1000)
+  
+  // Create a continuous timeline of days first
+  const dayPoints: { date: Date; total: number; player: number }[] = []
+  let c = new Date(startDate)
+  c.setHours(0,0,0,0)
+  const endD = new Date(endDate)
+  endD.setHours(0,0,0,0)
+
+  while (c <= endD) {
+      const iso = toIsoDateOnly(c)
+      const data = dailyMap.get(iso) || { total: 0, player: 0 }
+      dayPoints.push({
+          date: new Date(c),
+          total: data.total,
+          player: data.player
+      })
+      c.setDate(c.getDate() + 1)
+  }
+
+  // Helper for rolling average
+  function getRollingAvg(index: number, days: number, field: 'total' | 'player') {
+      let sum = 0
+      let count = 0
+      for (let i = 0; i < days; i++) {
+          if (index - i >= 0) {
+              sum += dayPoints[index - i][field]
+              count++
+          }
+      }
+      return count > 0 ? sum / count : 0
+  }
+
+  // If daily, apply 7-day rolling average
+  if (granularity === 'day') {
+      return dayPoints.map((p, idx) => ({
+          label: labelForDateUtc(p.date), // Re-use labelForDateUtc logic or similar
+          // For total, we want roughly the average mentions *per player* to compare against specific player?
+          // Or just total mentions? The mock data had "avg" around 500-600 and "player" around 600-1400.
+          // This suggests "avg" is "Average Player Mentions" (Top players).
+          // Since we don't know how many players are in the "pool", let's assume ~20 active players for normalization?
+          // Or we can just return raw total and let frontend handle scaling.
+          // Actually user asked for "7 day running average".
+          
+          // Let's assume 'avg' means "Market Average" -> Total Mentions / 15 (approx squad size relevant on social)
+          avg: Math.round(getRollingAvg(idx, 7, 'total') / 15),
+          player: Math.round(getRollingAvg(idx, 7, 'player'))
+      }))
+  } else {
+      // Weekly aggregation
+      // We can just sum up weeks?
+      // Or do we still want rolling average? User asked for "7 day running average".
+      // Usually weekly chart means "Sum of that week".
+      // Let's stick to daily logic for rolling avg but aggregated if weekly?
+      // No, for weekly granularity, usually it's just bucketed per week.
+      
+      const weeklyPoints: MentionsPoint[] = []
+      // ... reuse buildWeeklyPoints logic style ...
+      
+      // Let's keep it simple: if weekly, just group by week
+      // (Similar to buildWeeklyPoints but for this specific data structure)
+      
+      // Re-implement basic weekly bucketing
+      let currentWeekStart = startOfWeekUtc(startDate)
+      while (currentWeekStart <= endD) {
+          const currentWeekEnd = endOfWeekUtc(currentWeekStart)
+          
+          let sumTotal = 0
+          let sumPlayer = 0
+          
+          // Find days in this week
+          dayPoints.forEach(p => {
+              if (p.date >= currentWeekStart && p.date <= currentWeekEnd) {
+                  sumTotal += p.total
+                  sumPlayer += p.player
+              }
+          })
+          
+          weeklyPoints.push({
+              label: labelForDateUtc(currentWeekStart), // Using start date as label
+              avg: Math.round(sumTotal / 15), // Normalize by approx squad size
+              player: sumPlayer
+          })
+          
+          currentWeekStart = addDaysUtc(currentWeekStart, 7)
+      }
+      return weeklyPoints
+  }
 }

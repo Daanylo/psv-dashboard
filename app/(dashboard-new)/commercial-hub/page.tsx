@@ -368,10 +368,19 @@ export default function CommercialHubPage() {
         let label = item.brand;
         
         // Prefer config color and label if available
-        const configKey = Object.keys(trendsConfig).find(k => k === key) as keyof typeof trendsConfig;
-        if (configKey && trendsConfig[configKey]) {
-            color = trendsConfig[configKey].color;
-            label = trendsConfig[configKey].label || label;
+        const configKey = Object.keys(trendsConfig).find(k => k === key);
+        if (configKey) {
+            const configItem = trendsConfig[configKey];
+            if (configItem) {
+                 // Use nullish coalescing to fallback to existing color if config color is undefined
+                 color = configItem.color ?? color;
+                 
+                 // Ensure label is a string before assigning
+                 const potentialLabel = configItem.label;
+                 if (typeof potentialLabel === "string") {
+                     label = potentialLabel;
+                 }
+            }
         }
 
         return {

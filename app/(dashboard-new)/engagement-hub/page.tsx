@@ -386,6 +386,7 @@ function SentimentJourneyEventOverlay({
   if (!events.length || !points.length) return null
 
   const count = points.length
+  const indexCounts: Record<number, number> = {}
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
@@ -394,14 +395,18 @@ function SentimentJourneyEventOverlay({
           const idx = points.findIndex((p) => p.label === event.xLabel)
           if (idx < 0) return null
 
+          const stackIndex = indexCounts[idx] || 0
+          indexCounts[idx] = stackIndex + 1
+
           const leftPct = ((idx + 0.5) / count) * 100
+          const topOffset = -10 + (stackIndex * 32)
 
           return (
-            <div key={event.id} className="absolute" style={{ left: `${leftPct}%`, top: -10 }}>
+            <div key={event.id} className="absolute" style={{ left: `${leftPct}%`, top: topOffset }}>
               <div className="group pointer-events-auto relative z-10 hover:z-50" style={{ transform: "translateX(-14px)" }}>
                 <div
                   className={
-                    "flex h-7 items-center overflow-hidden rounded-md border border-border bg-background " +
+                    "flex items-center overflow-hidden rounded-md border border-border bg-background " +
                     "transition-[width,padding,justify-content] duration-150 ease-out " +
                     "w-7 justify-center px-0 " +
                     "group-hover:w-[180px] group-hover:justify-start group-hover:px-2"
@@ -463,8 +468,18 @@ const engagementMarqueeRowC = [
 export default function EngagementHubPage() {
   const [search, setSearch] = useState("")
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
-  const [customStart, setCustomStart] = useState<Date | undefined>()
-  const [customEnd, setCustomEnd] = useState<Date | undefined>()
+  
+  // Custom date range state (defaults to last 30 days)
+  const defaultEnd = useMemo(() => new Date(), [])
+  const defaultStart = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    return d
+  }, [])
+  
+  const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
+  const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
+
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [journeyGranularity, setJourneyGranularity] = useState<JourneyGranularity>("daily")
   const [journeyNormalize, setJourneyNormalize] = useState(false)
@@ -514,34 +529,46 @@ export default function EngagementHubPage() {
     }
   }, [])
 
+  const dateRangeDays = useMemo(() => {
+    switch (dateRangeKey) {
+      case "7":
+        return 7
+      case "30":
+        return 30
+      case "90":
+        return 90
+      case "365":
+        return 365
+      default:
+        return 30
+    }
+  }, [dateRangeKey])
+
   const { start, end } = useMemo(() => {
     if (dateRangeKey === "custom") {
-      const e = customEnd || new Date()
-      const s = customStart || new Date(new Date().setDate(new Date().getDate() - 30))
-      e.setHours(23, 59, 59, 999)
-      s.setHours(0, 0, 0, 0)
-      return { start: s, end: e }
+      return {
+        start: parseLocalIsoDate(customStart),
+        end: parseLocalIsoDate(customEnd)
+      }
     }
-    const map: Record<string, number> = {
-      "7": 7,
-      "30": 30,
-      "90": 90,
-      "365": 365,
-    }
-    return getDateRange(map[dateRangeKey] || 30, new Date())
-  }, [dateRangeKey, customStart, customEnd])
+    return getDateRange(dateRangeDays, new Date())
+  }, [dateRangeDays, dateRangeKey, customStart, customEnd])
 
   const dateRangeLabel = useMemo(() => `${formatShortDate(start)} - ${formatShortDate(end)}`, [start, end])
 
   const periodLabel = useMemo(() => {
-    if (dateRangeKey === "custom") return "Custom Range"
-    const labels: Record<string, string> = {
-      "7": "Last 7 days",
-      "30": "Last 30 days",
-      "90": "Last 90 days",
-      "365": "Last 365 days",
+    switch (dateRangeKey) {
+      case "7":
+        return "Last 7 days"
+      case "30":
+        return "Last 30 days"
+      case "90":
+        return "Last 90 days"
+      case "365":
+        return "Last 365 days"
+      case "custom":
+        return "Custom period"
     }
-    return labels[dateRangeKey] || "Select period"
   }, [dateRangeKey])
 
   useEffect(() => {
@@ -828,62 +855,47 @@ export default function EngagementHubPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {dateRangeKey === "custom" && (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">From</span>
-                <input
-                  type="date"
-                  value={customStart ? toIsoDateOnly(customStart) : ""}
-                  onChange={(e) => {
-                    if (!e.target.value) {
-                      setCustomStart(undefined)
-                      return
-                    }
-                    setCustomStart(parseLocalIsoDate(e.target.value))
-                  }}
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">To</span>
-                <input
-                  type="date"
-                  value={customEnd ? toIsoDateOnly(customEnd) : ""}
-                  onChange={(e) => {
-                    if (!e.target.value) {
-                      setCustomEnd(undefined)
-                      return
-                    }
-                    setCustomEnd(parseLocalIsoDate(e.target.value))
-                  }}
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-              <Separator orientation="vertical" className="h-6" />
-            </>
-          )}
-
-          <div className="inline-flex items-stretch">
-            <div
-              className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm"
-              aria-hidden="true"
-            >
-              <CalendarIcon className="h-4 w-4" />
-              <span>{dateRangeLabel}</span>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-stretch">
+            {dateRangeKey === "custom" ? (
+                <div className="border-input bg-background flex h-9 items-center gap-2 rounded-l-md border border-r-0 px-2">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    max={customEnd}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                  <span className="text-muted-foreground">-</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    min={customStart}
+                    max={toIsoDateOnly(defaultEnd)}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
+                  />
+                </div>
+              ) : (
+                <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+                  <CalendarIcon className="h-4 w-4" />
+                  {dateRangeLabel}
+                </div>
+              )}
+              <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
+                <SelectTrigger className="h-9 rounded-l-none border-l-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="365">Last 365 days</SelectItem>
+                  <Separator className="my-1" />
+                  <SelectItem value="custom">Custom Range</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
-              <SelectTrigger className="h-9 min-w-[140px] rounded-l-none border-l-0 bg-background font-medium hover:bg-accent hover:text-accent-foreground focus:ring-0">
-                <SelectValue>{periodLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
-                <SelectItem value="365">Last year</SelectItem>
-                <SelectItem value="custom">Custom Range</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
           <div className="relative">
@@ -1001,7 +1013,7 @@ export default function EngagementHubPage() {
                 type="button"
                 onClick={() => setJourneyGranularity("daily")}
                 className={cn(
-                  "inline-flex items-center rounded-sm px-3",
+                  "inline-flex h-7 items-center rounded-sm px-3",
                   journeyGranularity === "daily" ? "bg-black text-white" : "text-muted-foreground hover:bg-accent"
                 )}
               >
@@ -1011,7 +1023,7 @@ export default function EngagementHubPage() {
                 type="button"
                 onClick={() => setJourneyGranularity("weekly")}
                 className={cn(
-                  "inline-flex items-center rounded-sm px-3",
+                  "inline-flex h-7 items-center rounded-sm px-3",
                   journeyGranularity === "weekly" ? "bg-black text-white" : "text-muted-foreground hover:bg-accent"
                 )}
               >
@@ -1517,126 +1529,6 @@ export default function EngagementHubPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-6 grid w-full grid-cols-1 gap-6 md:grid-cols-3">
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1">
-          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
-            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
-              <PieChartIcon className="h-4 w-4" />
-              <span>PLATFORM SHARE</span>
-            </div>
-            <div className="text-sm text-muted-foreground">{periodLabel}</div>
-          </div>
-
-          <div className="px-6 pb-6">
-            <ChartContainer config={platformShare.config} className="h-[200px] w-full aspect-auto">
-              <PieChart>
-                <ChartTooltip
-                  cursor={false}
-                  content={({ active, payload }) => {
-                    if (!active || !payload || payload.length === 0) return null
-                    const item = payload[0] as unknown as { name?: unknown; value?: unknown; payload?: { name?: unknown } }
-                    const name = String(item?.name ?? item?.payload?.name ?? "")
-                    const value = typeof item?.value === "number" ? item.value : Number(item?.value)
-
-                    return (
-                      <div className="rounded-lg border border-black bg-black px-3 py-2 shadow-md text-white">
-                        <div className="text-sm font-semibold text-white">{legendLabel(name)}</div>
-                        <div className="mt-1 text-xs text-white/80 tabular-nums">
-                          {Number.isFinite(value) ? `${value.toFixed(0)}%` : "-"}
-                        </div>
-                      </div>
-                    )
-                  }}
-                />
-                <Pie
-                  data={platformShare.data as unknown as Array<{ name: string; value: number }>}
-                  dataKey="value"
-                  nameKey="name"
-                  outerRadius={92}
-                  paddingAngle={0}
-                  stroke="transparent"
-                  strokeWidth={0}
-                >
-                  {platformShare.data.map((item) => (
-                    <Cell key={item.key} fill={`var(--color-${item.key})`} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ChartContainer>
-
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
-              {platformShare.data.map((item) => (
-                <div key={item.key} className="flex items-center gap-2">
-                  <span className="h-[10px] w-[10px] rounded-[2px]" style={{ backgroundColor: item.color }} aria-hidden="true" />
-                  <span>{legendLabel(item.name)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1">
-          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">TOP CONTENT TYPE</div>
-            <div className="text-sm text-muted-foreground">{periodLabel}</div>
-          </div>
-
-          <div className="px-6 pb-6 space-y-5">
-            {([
-              { label: "Video", value: 40 },
-              { label: "Stories", value: 27 },
-              { label: "Photo", value: 18 },
-              { label: "Text", value: 15 },
-            ] as const).map((item) => (
-              <div key={item.label}>
-                <div className="flex items-center justify-between text-sm">
-                  <div className="font-medium">{item.label}</div>
-                  <div className="font-semibold tabular-nums">{item.value}%</div>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-black" style={{ width: `${item.value}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background md:col-span-1">
-          <div className="flex items-baseline justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">TOP HASHTAGS</div>
-            <div className="text-sm text-muted-foreground">{periodLabel}</div>
-          </div>
-
-          <div className="px-6 pb-6 space-y-5">
-            {([
-              { tag: "#PSV", value: 32, deltaPct: 8.2 },
-              { tag: "#UCL", value: 24, deltaPct: -3.4 },
-              { tag: "#Eredivisie", value: 18, deltaPct: 2.1 },
-              { tag: "#PSVFans", value: 12, deltaPct: -1.6 },
-            ] as const).map((item) => {
-              const up = item.deltaPct >= 0
-              return (
-                <div key={item.tag}>
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="font-medium">{item.tag}</div>
-                    <div className="flex items-center gap-2">
-                      <div className="font-semibold tabular-nums">{item.value}%</div>
-                      <div className={cn("text-xs font-semibold tabular-nums", up ? "text-green-600" : "text-red-600")}>
-                        {up ? "+" : ""}
-                        {item.deltaPct.toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div className="h-full rounded-full bg-black" style={{ width: `${item.value}%` }} />
-                  </div>
-                </div>
-              )
-            })}
           </div>
         </div>
       </section>

@@ -353,6 +353,7 @@ function SentimentJourneyEventOverlay({
   if (!events.length || !points.length) return null
 
   const count = points.length
+  const indexCounts: Record<number, number> = {}
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
@@ -364,13 +365,17 @@ function SentimentJourneyEventOverlay({
           const idx = points.findIndex((p) => p.label === event.xLabel)
           if (idx < 0) return null
 
+          const stackIndex = indexCounts[idx] || 0
+          indexCounts[idx] = stackIndex + 1
+
           const leftPct = ((idx + 0.5) / count) * 100
+          const topOffset = -10 + (stackIndex * 32)
 
           return (
             <div
               key={event.id}
               className="absolute"
-              style={{ left: `${leftPct}%`, top: -10 }}
+              style={{ left: `${leftPct}%`, top: topOffset }}
             >
               <div
                 className="group pointer-events-auto relative z-10 hover:z-50"

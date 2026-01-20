@@ -55,27 +55,36 @@ export default function BrandingPage() {
   const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
-  const [customStart, setCustomStart] = useState<Date | undefined>()
-  const [customEnd, setCustomEnd] = useState<Date | undefined>()
+  
+  const defaultEnd = useMemo(() => new Date(), [])
+  const defaultStart = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    return d
+  }, [])
+  
+  const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
+  const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
+  
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [brandDropdownOpen, setBrandDropdownOpen] = useState(false)
 
+  const dateRangeDays = useMemo(() => {
+    switch (dateRangeKey) {
+      case "7": return 7
+      case "30": return 30
+      case "90": return 90
+      case "365": return 365
+      default: return 30
+    }
+  }, [dateRangeKey])
+
   const { start, end } = useMemo(() => {
     if (dateRangeKey === "custom") {
-      const e = customEnd || new Date()
-      const s = customStart || new Date(new Date().setDate(new Date().getDate() - 30))
-      e.setHours(23, 59, 59, 999)
-      s.setHours(0, 0, 0, 0)
-      return { start: s, end: e }
+      return { start: parseLocalIsoDate(customStart), end: parseLocalIsoDate(customEnd) }
     }
-    const map: Record<string, number> = {
-      "7": 7,
-      "30": 30,
-      "90": 90,
-      "365": 365,
-    }
-    return getDateRange(map[dateRangeKey] || 30, new Date())
-  }, [dateRangeKey, customStart, customEnd])
+    return getDateRange(dateRangeDays, new Date())
+  }, [dateRangeDays, dateRangeKey, customStart, customEnd])
 
   const dateRangeLabel = useMemo(
     () => `${formatShortDate(start)} - ${formatShortDate(end)}`,
@@ -83,14 +92,18 @@ export default function BrandingPage() {
   )
 
   const periodLabel = useMemo(() => {
-    if (dateRangeKey === "custom") return "Custom Range"
-    const labels: Record<string, string> = {
-      "7": "Last 7 days",
-      "30": "Last 30 days",
-      "90": "Last 3 months",
-      "365": "Last year",
+    switch (dateRangeKey) {
+      case "7":
+        return "Last 7 days"
+      case "30":
+        return "Last 30 days"
+      case "90":
+        return "Last 90 days"
+      case "365":
+        return "Last 365 days"
+      case "custom":
+        return "Custom period"
     }
-    return labels[dateRangeKey] || "Select period"
   }, [dateRangeKey])
 
   return (
@@ -107,59 +120,42 @@ export default function BrandingPage() {
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
-            {dateRangeKey === "custom" && (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">From</span>
+            <div className="inline-flex items-stretch">
+            {dateRangeKey === "custom" ? (
+                <div className="border-input bg-background flex h-9 items-center gap-2 rounded-l-md border border-r-0 px-2">
                   <input
                     type="date"
-                    value={customStart ? toIsoDateOnly(customStart) : ""}
-                    onChange={(e) => {
-                      if (!e.target.value) {
-                        setCustomStart(undefined)
-                        return
-                      }
-                      setCustomStart(parseLocalIsoDate(e.target.value))
-                    }}
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    max={customEnd}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
                   />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">To</span>
+                  <span className="text-muted-foreground">-</span>
                   <input
                     type="date"
-                    value={customEnd ? toIsoDateOnly(customEnd) : ""}
-                    onChange={(e) => {
-                      if (!e.target.value) {
-                        setCustomEnd(undefined)
-                        return
-                      }
-                      setCustomEnd(parseLocalIsoDate(e.target.value))
-                    }}
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    min={customStart}
+                    max={toIsoDateOnly(defaultEnd)}
+                    className="h-full bg-transparent text-sm outline-none w-[110px]"
                   />
                 </div>
-                <Separator orientation="vertical" className="h-6" />
-              </>
-            )}
-
-            <div className="inline-flex items-stretch shadow-sm">
-              <div
-                className="flex items-center gap-2 rounded-l-md border border-r-0 border-input bg-card px-3 text-sm text-muted-foreground"
-                aria-hidden="true"
-              >
-                <CalendarIcon className="h-4 w-4" />
-                <span>{dateRangeLabel}</span>
-              </div>
+              ) : (
+                <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
+                  <CalendarIcon className="h-4 w-4" />
+                  {dateRangeLabel}
+                </div>
+              )}
               <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
-                <SelectTrigger className="h-9 min-w-[140px] rounded-l-none border-l-0 bg-background font-medium hover:bg-accent hover:text-accent-foreground focus:ring-0">
-                  <SelectValue>{periodLabel}</SelectValue>
+                <SelectTrigger className="h-9 rounded-l-none border-l-0">
+                  <SelectValue />
                 </SelectTrigger>
-                <SelectContent align="end">
+                <SelectContent>
                   <SelectItem value="7">Last 7 days</SelectItem>
                   <SelectItem value="30">Last 30 days</SelectItem>
-                  <SelectItem value="90">Last 3 months</SelectItem>
-                  <SelectItem value="365">Last year</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="365">Last 365 days</SelectItem>
+                  <Separator className="my-1" />
                   <SelectItem value="custom">Custom Range</SelectItem>
                 </SelectContent>
               </Select>

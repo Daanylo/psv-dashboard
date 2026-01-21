@@ -36,8 +36,8 @@ export default function HashtagPerformanceChart() {
         const hashtags = await response.json()
         // Check if it's an array
         if (Array.isArray(hashtags)) {
-          // Take top 10
-          setData(hashtags.slice(0, 10))
+          // Take top 4
+          setData(hashtags.slice(0, 4))
         } else {
           console.error("Invalid response format:", hashtags)
         }
@@ -111,23 +111,6 @@ export default function HashtagPerformanceChart() {
         <Bar
           dataKey="engagement"
           radius={[0, 4, 4, 0]}
-          label={({ value, x, y, width, height }) => {
-            const displayValue = value ?? 0
-            const xPos = x + width + 5
-            const yPos = y + height / 2
-            return (
-              <text
-                x={xPos}
-                y={yPos}
-                fill="currentColor"
-                textAnchor="start"
-                dominantBaseline="middle"
-                className="text-xs font-medium"
-              >
-                {displayValue.toLocaleString()}
-              </text>
-            )
-          }}
         >
           {chartData.map((entry) => (
             <Cell

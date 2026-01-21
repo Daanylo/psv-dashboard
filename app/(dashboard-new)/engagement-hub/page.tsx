@@ -4,6 +4,7 @@ import { PlayerLink } from "@/components/player-link"
 
 import Image from "next/image"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowUpDown,
@@ -30,6 +31,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Separator } from "@/components/ui/separator"
+import { GlobalSearch } from "@/components/global-search"
 import {
   Bar,
   BarChart,
@@ -386,11 +388,13 @@ function SentimentJourneyEventOverlay({
   events,
   plotLeftPx,
   plotRightPx,
+  onMatchClick,
 }: {
   points: SentimentJourneyPoint[]
   events: SentimentJourneyEvent[]
   plotLeftPx: number
   plotRightPx: number
+  onMatchClick?: (matchId: number) => void
 }) {
   if (!events.length || !points.length) return null
 
@@ -403,6 +407,9 @@ function SentimentJourneyEventOverlay({
         {events.map((event) => {
           const idx = points.findIndex((p) => p.label === event.xLabel)
           if (idx < 0) return null
+
+          const matchId = Number(event.id)
+          const canNavigate = !!onMatchClick && Number.isFinite(matchId) && matchId > 0
 
           const stackIndex = indexCounts[idx] || 0
           indexCounts[idx] = stackIndex + 1
@@ -418,8 +425,15 @@ function SentimentJourneyEventOverlay({
                     "flex items-center overflow-hidden rounded-md border border-border bg-background " +
                     "transition-[width,padding,justify-content] duration-150 ease-out " +
                     "w-7 justify-center px-0 " +
-                    "group-hover:w-[180px] group-hover:justify-start group-hover:px-2"
+                    "group-hover:w-[180px] group-hover:justify-start group-hover:px-2 " +
+                    (canNavigate ? "cursor-pointer" : "")
                   }
+                  onClick={(e) => {
+                    if (!canNavigate) return
+                    e.stopPropagation()
+                    onMatchClick(matchId)
+                  }}
+                  role={canNavigate ? "button" : undefined}
                 >
                   <Flag className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div
@@ -429,7 +443,9 @@ function SentimentJourneyEventOverlay({
                       "group-hover:max-w-[140px] group-hover:opacity-100"
                     }
                   >
-                    <div className="truncate text-xs font-medium text-foreground">{event.title}</div>
+                    <div className={canNavigate ? "truncate text-xs font-medium text-foreground group-hover:underline" : "truncate text-xs font-medium text-foreground"}>
+                      {event.title}
+                    </div>
                     <div className="truncate text-[11px] text-muted-foreground">{event.subtitle}</div>
                   </div>
                 </div>
@@ -475,7 +491,7 @@ const engagementMarqueeRowC = [
 ] as const
 
 export default function EngagementHubPage() {
-  const [search, setSearch] = useState("")
+  const router = useRouter()
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   
   // Custom date range state (defaults to last 30 days)
@@ -857,12 +873,7 @@ export default function EngagementHubPage() {
     <main className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
-          />
+          <GlobalSearch />
         </div>
 
         <div className="flex items-center gap-2">
@@ -1065,6 +1076,7 @@ export default function EngagementHubPage() {
                   events={sentimentJourneyEvents}
                   plotLeftPx={40}
                   plotRightPx={18}
+                  onMatchClick={(matchId) => router.push(`/events?match_id=${matchId}`)}
                 />
               }
             >
@@ -1072,6 +1084,15 @@ export default function EngagementHubPage() {
                 data={sentimentJourneyChartData}
                 margin={{ top: 12, right: 18, left: 0, bottom: 0 }}
                 stackOffset="sign"
+                onClick={(state) => {
+                  const s = state as any
+                  const label = (s?.activeLabel as string | undefined) ?? (s?.activePayload?.[0]?.payload?.label as string | undefined)
+                  if (!label) return
+                  const event = sentimentJourneyEvents.find((e) => e.xLabel === label)
+                  const matchId = Number(event?.id)
+                  if (!Number.isFinite(matchId) || matchId <= 0) return
+                  router.push(`/events?match_id=${matchId}`)
+                }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <ReferenceLine y={0} stroke="var(--background)" strokeWidth={10} />

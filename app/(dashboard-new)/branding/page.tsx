@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { Calendar as CalendarIcon, ChevronDown, ChevronRight, Download, Filter } from "lucide-react"
+import { GlobalSearch } from "@/components/global-search"
 import {
   Card,
   CardContent,
@@ -52,7 +53,6 @@ function getDateRange(days: number, endDate: Date) {
 }
 
 export default function BrandingPage() {
-  const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   
@@ -110,12 +110,7 @@ export default function BrandingPage() {
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
-          />
+          <GlobalSearch />
         </div>
 
         <div className="flex items-center gap-2">

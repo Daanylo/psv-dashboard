@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { GlobalSearch } from "@/components/global-search"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import { cn } from "@/lib/utils"
 import {
@@ -126,39 +127,50 @@ function addDaysLocal(date: Date, days: number) {
 
 type SortKey = "impressions" | "visibility" | "time" | "sentiment"
 
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+}
+
 export default function SponsorsReportPage() {
-  const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
-  const [brandKey, setBrandKey] = useState<string>(() => {
-    if (typeof window === "undefined") return "puma"
-    const sp = new URLSearchParams(window.location.search)
-    return sp.get("brand") || "puma"
-  })
+  const [brandKey, setBrandKey] = useState<string>("puma")
   const [sortBy, setSortBy] = useState<SortKey>("impressions")
   const [availableBrands, setAvailableBrands] = useState<Brand[]>([])
   const [brandsLoading, setBrandsLoading] = useState(true)
+  const [hasMounted, setHasMounted] = useState(false)
 
   const router = useRouter()
   const searchParams = useSearchParams()
   const brandParam = searchParams.get("brand")
+  const searchParamsStr = searchParams.toString()
 
   useEffect(() => {
-    if (brandParam && brandParam !== brandKey) {
-      setBrandKey(brandParam)
-    }
+    setHasMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!brandParam) return
+    if (brandParam !== brandKey) setBrandKey(brandParam)
   }, [brandParam, brandKey])
 
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search)
+    if (!hasMounted) return
+
+    const sp = new URLSearchParams(searchParamsStr)
     if (brandKey) sp.set("brand", brandKey)
     else sp.delete("brand")
 
-    const nextSearch = sp.toString() ? `?${sp.toString()}` : ""
-    if (nextSearch !== window.location.search) {
-      router.replace(`/sponsors-report${nextSearch}`, { scroll: false })
-    }
-  }, [brandKey, router])
+    const nextStr = sp.toString()
+    if (nextStr === searchParamsStr) return
+
+    router.replace(`/sponsors-report${nextStr ? `?${nextStr}` : ""}`, { scroll: false })
+  }, [brandKey, hasMounted, router, searchParamsStr])
 
   // Fetch available brands
   useEffect(() => {
@@ -168,10 +180,6 @@ export default function SponsorsReportPage() {
             if (res.ok) {
                 const data = await res.json()
                 setAvailableBrands(data)
-                // If current brandKey is not in fetched brands, reset to first one
-                if (data.length > 0 && !data.find((b: Brand) => b.slug === brandKey)) {
-                   setBrandKey(data[0].slug)
-                }
             }
         } catch (e) {
             console.error("Failed to fetch brands", e)
@@ -181,6 +189,26 @@ export default function SponsorsReportPage() {
     }
     fetchBrands()
   }, [])
+
+  useEffect(() => {
+    if (!availableBrands.length) return
+
+    const normalized = (brandKey ?? "").toLowerCase().trim()
+    if (!normalized) {
+      setBrandKey(availableBrands[0].slug)
+      return
+    }
+
+    if (availableBrands.some((b) => b.slug === normalized)) return
+
+    const matchBySlugifiedName = availableBrands.find((b) => slugify(b.name) === normalized)
+    if (matchBySlugifiedName) {
+      setBrandKey(matchBySlugifiedName.slug)
+      return
+    }
+
+    setBrandKey(availableBrands[0].slug)
+  }, [availableBrands, brandKey])
   
   // State for fetched data
   const [data, setData] = useState<any>(null)
@@ -561,12 +589,7 @@ export default function SponsorsReportPage() {
     <main ref={mainRef} className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
-          />
+          <GlobalSearch />
         </div>
 
         <div className="flex items-center gap-2">

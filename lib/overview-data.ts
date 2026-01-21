@@ -789,6 +789,8 @@ export async function loadTopExposures(startTs: number, endTs: number) {
      LEFT JOIN brands b ON ld.brand_id = b.id
      WHERE ip.taken_at_timestamp >= ? AND ip.taken_at_timestamp <= ?
        AND ld.logo_label IS NOT NULL AND ld.logo_label <> ''
+       AND (b.slug IS NULL OR LOWER(TRIM(b.slug)) NOT LIKE 'psv%')
+       AND LOWER(TRIM(COALESCE(b.name, ld.logo_label))) NOT LIKE 'psv%'
      GROUP BY b.id, b.slug, COALESCE(b.name, ld.logo_label), COALESCE(b.logo_light, b.logo_light_url), COALESCE(b.logo_dark, b.logo_dark_url)
      ORDER BY count DESC
      LIMIT 3`,

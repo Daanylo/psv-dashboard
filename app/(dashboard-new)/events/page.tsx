@@ -4,12 +4,10 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
-import { ArrowRight, Calendar as CalendarIcon, Download, Filter } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ArrowRight, Download, Filter } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { PlayerLink } from "@/components/player-link"
-
-type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
+import { GlobalSearch } from "@/components/global-search"
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
@@ -30,21 +28,6 @@ function toIsoDateOnly(date: Date) {
   const month = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
-}
-
-function parseLocalIsoDate(value: string) {
-  const [y, m, d] = value.split("-").map(Number)
-  return new Date(y, m - 1, d)
-}
-
-function getDateRange(days: number, endDate: Date) {
-  const end = new Date(endDate)
-  end.setHours(0, 0, 0, 0)
-
-  const start = new Date(end)
-  start.setDate(start.getDate() - (days - 1))
-
-  return { start, end }
 }
 
 function getRatingBadgeClass(rating: number) {
@@ -212,9 +195,8 @@ export default function EventsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const [search, setSearch] = useState("")
+  const [matchSearch, setMatchSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
-  const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   const [matches, setMatches] = useState<MatchListItem[]>([])
   const [matchesLoading, setMatchesLoading] = useState(false)
   const [matchesError, setMatchesError] = useState<string | null>(null)
@@ -230,58 +212,13 @@ export default function EventsPage() {
     if (!Number.isFinite(parsed)) return null
     return parsed
   }, [searchParams])
-  
-  const defaultEnd = useMemo(() => new Date(), [])
-  const defaultStart = useMemo(() => {
+
+  const end = useMemo(() => new Date(), [])
+  const start = useMemo(() => {
     const d = new Date()
-    d.setDate(d.getDate() - 30)
+    d.setDate(d.getDate() - 365)
     return d
   }, [])
-  
-  const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
-  const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
-
-  const dateRangeDays = useMemo(() => {
-    switch (dateRangeKey) {
-      case "7":
-        return 7
-      case "30":
-        return 30
-      case "90":
-        return 90
-      case "365":
-        return 365
-      default:
-        return 30
-    }
-  }, [dateRangeKey])
-
-  const { start, end } = useMemo(() => {
-    if (dateRangeKey === "custom") {
-      return {
-        start: parseLocalIsoDate(customStart),
-        end: parseLocalIsoDate(customEnd)
-      }
-    }
-    return getDateRange(dateRangeDays, new Date())
-  }, [dateRangeDays, dateRangeKey, customStart, customEnd])
-
-  const dateRangeLabel = useMemo(() => `${formatShortDate(start)} - ${formatShortDate(end)}`, [start, end])
-
-  const periodLabel = useMemo(() => {
-    switch (dateRangeKey) {
-      case "7":
-        return "Last 7 days"
-      case "30":
-        return "Last 30 days"
-      case "90":
-        return "Last 90 days"
-      case "365":
-        return "Last 365 days"
-      case "custom":
-        return "Custom period"
-    }
-  }, [dateRangeKey])
 
   useEffect(() => {
     let cancelled = false
@@ -410,13 +347,13 @@ export default function EventsPage() {
   }, [selectedMatch])
 
   const filteredMatches = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = matchSearch.trim().toLowerCase()
     if (!q) return matches
     return matches.filter((m) => {
       const hay = `${m.homeTeamName} ${m.awayTeamName} ${m.tournamentName ?? ""} ${m.scoreStr ?? ""}`.toLowerCase()
       return hay.includes(q)
     })
-  }, [matches, search])
+  }, [matches, matchSearch])
 
   const best = report?.hero.best ?? null
   const worst = report?.hero.worst ?? null
@@ -431,58 +368,10 @@ export default function EventsPage() {
     <main className="max-w-screen-xl mx-auto px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
-          />
+          <GlobalSearch />
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex items-stretch">
-            {dateRangeKey === "custom" ? (
-                <div className="border-input bg-background flex h-9 items-center gap-2 rounded-l-md border border-r-0 px-2">
-                  <input
-                    type="date"
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                    max={customEnd}
-                    className="h-full bg-transparent text-sm outline-none w-[110px]"
-                  />
-                  <span className="text-muted-foreground">-</span>
-                  <input
-                    type="date"
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                    min={customStart}
-                    max={toIsoDateOnly(defaultEnd)}
-                    className="h-full bg-transparent text-sm outline-none w-[110px]"
-                  />
-                </div>
-              ) : (
-                <div className="border-input gap-2 bg-background text-foreground inline-flex h-9 items-center rounded-l-md border px-3 text-sm">
-                  <CalendarIcon className="h-4 w-4" />
-                  {dateRangeLabel}
-                </div>
-              )}
-              <Select value={dateRangeKey} onValueChange={(v) => setDateRangeKey(v as DateRangeKey)}>
-                <SelectTrigger className="h-9 rounded-l-none border-l-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7">Last 7 days</SelectItem>
-                  <SelectItem value="30">Last 30 days</SelectItem>
-                  <SelectItem value="90">Last 90 days</SelectItem>
-                  <SelectItem value="365">Last 365 days</SelectItem>
-                  <Separator className="my-1" />
-                  <SelectItem value="custom">Custom Range</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           <div className="relative">
             <button
               type="button"
@@ -501,6 +390,14 @@ export default function EventsPage() {
                 className="bg-popover text-popover-foreground absolute right-0 top-full z-50 mt-2 w-56 rounded-md border p-2 text-sm shadow-md"
               >
                 <div className="px-2 py-1.5 text-muted-foreground">Matches</div>
+                <div className="px-2 pb-1.5">
+                  <input
+                    value={matchSearch}
+                    onChange={(e) => setMatchSearch(e.target.value)}
+                    placeholder="Search matches…"
+                    className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-8 w-full rounded-md border bg-transparent px-2 text-xs outline-none focus:border-primary"
+                  />
+                </div>
                 {matchesLoading ? (
                   <div className="px-2 py-1.5 text-muted-foreground">Loading...</div>
                 ) : matchesError ? (
@@ -750,7 +647,7 @@ export default function EventsPage() {
               <div className="text-base font-semibold font-psv-branding">PERFORMANCE VS SENTIMENT</div>
               <div className="text-sm text-muted-foreground">Mismatch between match rating and comment sentiment</div>
             </div>
-            <div className="text-sm text-muted-foreground">{periodLabel}</div>
+            <div className="text-sm text-muted-foreground">{recentEventDateLabel}</div>
           </div>
         </div>
 

@@ -35,7 +35,7 @@ export async function POST(request: Request) {
         det.box.y,
         det.box.width,
         det.box.height,
-        'best.onnx',
+        'best2.onnx',
         confidenceThreshold
       ]);
 

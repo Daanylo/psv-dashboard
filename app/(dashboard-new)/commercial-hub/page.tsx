@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { GlobalSearch } from "@/components/global-search"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { cn } from "@/lib/utils"
 
@@ -132,7 +133,6 @@ function endOfWeekLocal(date: Date) {
 }
 
 export default function CommercialHubPage() {
-  const [search, setSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   const [exposureGranularity, setExposureGranularity] = useState<ExposureGranularity>("daily")
@@ -555,12 +555,7 @@ export default function CommercialHubPage() {
     <main ref={mainRef} className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm transition-[color] outline-none focus:border-primary"
-          />
+          <GlobalSearch />
         </div>
 
         <div className="flex items-center gap-2">

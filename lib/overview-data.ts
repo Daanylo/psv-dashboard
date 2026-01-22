@@ -8,6 +8,7 @@ export type SentimentJourneyPoint = {
   negativeCount: number
   negativeDisplay: number
   totalCount: number
+  postsCount: number
   isoStart: string
   isoEnd: string
 }
@@ -227,6 +228,7 @@ export function buildDailyPoints(
       negativeCount: counts.neg,
       negativeDisplay: -counts.neg,
       totalCount: counts.total,
+      postsCount: 0,
       isoStart: iso,
       isoEnd: iso,
     })
@@ -280,6 +282,7 @@ export function buildWeeklyPoints(
       negativeCount: neg,
       negativeDisplay: -neg,
       totalCount: total,
+      postsCount: 0,
       isoStart: toIsoDateOnly(visibleStart),
       isoEnd: toIsoDateOnly(visibleEnd),
     })
@@ -288,6 +291,62 @@ export function buildWeeklyPoints(
   }
 
   return points
+}
+
+export async function loadPostsCountsByDay(startTs: number, endTs: number) {
+  const rows = await query<
+    Array<{
+      day: string | Date
+      postCount: number | string | null
+    }>
+  >(
+    `SELECT
+      DATE_FORMAT(DATE(FROM_UNIXTIME(ip.taken_at_timestamp)), '%Y-%m-%d') as day,
+      COUNT(*) as postCount
+     FROM instagram_posts ip
+     WHERE ip.taken_at_timestamp IS NOT NULL
+       AND ip.taken_at_timestamp >= ?
+       AND ip.taken_at_timestamp <= ?
+     GROUP BY day
+     ORDER BY day ASC`,
+    [startTs, endTs],
+  )
+
+  const map = new Map<string, number>()
+  for (const row of rows) {
+    const dayKey = typeof row.day === "string" ? row.day.slice(0, 10) : toIsoDateOnly(row.day)
+    map.set(dayKey, Number(row.postCount ?? 0))
+  }
+  return map
+}
+
+export function attachPostsCountsToPoints(
+  points: SentimentJourneyPoint[],
+  postsByDay: Map<string, number>,
+) {
+  return points.map((p) => {
+    if (p.isoStart === p.isoEnd) {
+      return { ...p, postsCount: Number(postsByDay.get(p.isoStart) ?? 0) }
+    }
+
+    const start = parseIsoDateOnly(p.isoStart)
+    const end = parseIsoDateOnly(p.isoEnd)
+    if (!start || !end) return { ...p, postsCount: 0 }
+
+    let sum = 0
+    let cursor = new Date(start)
+    cursor.setUTCHours(0, 0, 0, 0)
+
+    const endDay = new Date(end)
+    endDay.setUTCHours(0, 0, 0, 0)
+
+    while (cursor <= endDay) {
+      sum += Number(postsByDay.get(toIsoDateOnly(cursor)) ?? 0)
+      cursor = addDaysUtc(cursor, 1)
+    }
+
+    return { ...p, postsCount: sum }
+  })
 }
 
 export type PlayerRow = {

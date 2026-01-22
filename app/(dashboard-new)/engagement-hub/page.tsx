@@ -30,6 +30,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { exportNodeToPdf } from "@/lib/export-pdf"
 import { Separator } from "@/components/ui/separator"
 import { GlobalSearch } from "@/components/global-search"
 import {
@@ -61,6 +62,7 @@ type SentimentJourneyPoint = {
   negativeCount: number
   negativeDisplay: number
   totalCount: number
+  postsCount: number
   isoStart: string
   isoEnd: string
   positivePct?: number
@@ -287,6 +289,7 @@ function makeMockJourney(start: Date, end: Date, granularity: JourneyGranularity
 
     const pos = Math.round(total * (0.25 + 0.55 * positivity) * (0.92 + r() * 0.16))
     const neg = Math.round(total * (0.75 - 0.55 * positivity) * (0.92 + r() * 0.16))
+    const posts = Math.floor(r() * 5)
 
     points.push({
       label: labelForDate(visibleStart),
@@ -294,6 +297,7 @@ function makeMockJourney(start: Date, end: Date, granularity: JourneyGranularity
       negativeCount: neg,
       negativeDisplay: -neg,
       totalCount: pos + neg,
+      postsCount: posts,
       isoStart: toIsoDateOnly(visibleStart),
       isoEnd: toIsoDateOnly(visibleEnd),
     })
@@ -458,6 +462,51 @@ function SentimentJourneyEventOverlay({
   )
 }
 
+function SentimentJourneyPostsOverlay({
+  points,
+  plotLeftPx,
+  plotRightPx,
+}: {
+  points: Array<Pick<SentimentJourneyPoint, "postsCount">>
+  plotLeftPx: number
+  plotRightPx: number
+}) {
+  if (!points.length) return null
+
+  const maxPosts = points.reduce((acc, p) => Math.max(acc, Number(p.postsCount ?? 0)), 0)
+  if (!maxPosts) return null
+
+  const count = points.length
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      <div className="absolute top-0" style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}>
+        {points.map((p, idx) => {
+          const posts = Number(p.postsCount ?? 0)
+          const t = maxPosts ? posts / maxPosts : 0
+          const opacity = 0.08 + t * 0.42
+          const leftPct = ((idx + 0.5) / count) * 100
+
+          return (
+            <div
+              key={idx}
+              className="pointer-events-auto absolute rounded-[2px] bg-primary"
+              title={`${posts.toLocaleString()} posts`}
+              style={{
+                left: `calc(${leftPct}% - 2px)`,
+                bottom: 6,
+                width: "4px",
+                height: "10px",
+                opacity,
+              }}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 type MentionsShareSlice = {
   key: string
   name: string
@@ -492,6 +541,8 @@ const engagementMarqueeRowC = [
 
 export default function EngagementHubPage() {
   const router = useRouter()
+
+  const mainRef = useRef<HTMLElement>(null)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   
   // Custom date range state (defaults to last 30 days)
@@ -870,7 +921,7 @@ export default function EngagementHubPage() {
   }, [])
 
   return (
-    <main className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
+    <main ref={mainRef} className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
           <GlobalSearch />
@@ -944,6 +995,10 @@ export default function EngagementHubPage() {
 
           <button
             type="button"
+            onClick={async () => {
+              if (!mainRef.current) return
+              await exportNodeToPdf(mainRef.current, "engagement-hub.pdf")
+            }}
             className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
           >
             <Download className="h-4 w-4" />
@@ -1062,6 +1117,11 @@ export default function EngagementHubPage() {
               />
               <span>Normalize</span>
             </label>
+
+            <div className="ml-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-3 w-1.5 rounded-[2px] bg-primary/30" aria-hidden="true" />
+              <span>Posts</span>
+            </div>
           </div>
         </div>
 
@@ -1071,18 +1131,21 @@ export default function EngagementHubPage() {
               config={sentimentJourneyChartConfig}
               className="h-[260px] w-full"
               overlay={
-                <SentimentJourneyEventOverlay
-                  points={sentimentJourneyData.points}
-                  events={sentimentJourneyEvents}
-                  plotLeftPx={40}
-                  plotRightPx={18}
-                  onMatchClick={(matchId) => router.push(`/events?match_id=${matchId}`)}
-                />
+                <>
+                  <SentimentJourneyPostsOverlay points={sentimentJourneyData.points} plotLeftPx={40} plotRightPx={18} />
+                  <SentimentJourneyEventOverlay
+                    points={sentimentJourneyData.points}
+                    events={sentimentJourneyEvents}
+                    plotLeftPx={40}
+                    plotRightPx={18}
+                    onMatchClick={(matchId) => router.push(`/events?match_id=${matchId}`)}
+                  />
+                </>
               }
             >
               <BarChart
                 data={sentimentJourneyChartData}
-                margin={{ top: 12, right: 18, left: 0, bottom: 0 }}
+                margin={{ top: 12, right: 18, left: 0, bottom: 18 }}
                 stackOffset="sign"
                 onClick={(state) => {
                   const s = state as any
@@ -1104,6 +1167,7 @@ export default function EngagementHubPage() {
                     if (!point) return null
 
                     const total = point.positiveCount + point.negativeCount
+                    const posts = Number(point.postsCount ?? 0)
                     const netPct = total === 0 ? 0 : ((point.positiveCount - point.negativeCount) / total) * 100
                     return (
                       <div className="rounded-lg bg-black px-3 py-2 text-white shadow-md">
@@ -1144,6 +1208,10 @@ export default function EngagementHubPage() {
                               Total: {total.toLocaleString()}
                             </div>
                           ) : null}
+                          <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/60">
+                            <span>Posts</span>
+                            <span className="tabular-nums">{posts.toLocaleString()}</span>
+                          </div>
                           <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/70">
                             <LineChartIcon className="h-3.5 w-3.5" />
                             <span className="tabular-nums">{netPct.toFixed(0)}%</span>

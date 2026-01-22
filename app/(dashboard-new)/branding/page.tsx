@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Activity,
   AlertTriangle,
@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { exportNodeToPdf } from "@/lib/export-pdf"
 
 type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 
@@ -93,6 +94,7 @@ export default function BrandingPage() {
     d.setDate(d.getDate() - 30)
     return d
   }, [])
+  const mainRef = useRef<HTMLElement>(null)
   
   const [customStart, setCustomStart] = useState<string>(toIsoDateOnly(defaultStart))
   const [customEnd, setCustomEnd] = useState<string>(toIsoDateOnly(defaultEnd))
@@ -138,7 +140,7 @@ export default function BrandingPage() {
   }, [dateRangeKey])
 
   return (
-    <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
+    <main ref={mainRef} className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
           <GlobalSearch />
@@ -212,6 +214,10 @@ export default function BrandingPage() {
 
           <button
             type="button"
+            onClick={async () => {
+              if (!mainRef.current) return
+              await exportNodeToPdf(mainRef.current, "branding.pdf")
+            }}
             className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
           >
             <Download className="h-4 w-4" />

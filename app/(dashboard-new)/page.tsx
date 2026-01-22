@@ -3,7 +3,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowRight,
   ArrowUpDown,
@@ -34,6 +34,7 @@ import { PlayerLink } from "@/components/player-link"
 import { BrandLink } from "@/components/brand-link"
 import { GlobalSearch } from "@/components/global-search"
 import { Separator } from "@/components/ui/separator"
+import { exportNodeToPdf } from "@/lib/export-pdf"
 import { cn } from "@/lib/utils"
 import {
   Bar,
@@ -54,6 +55,7 @@ type SentimentJourneyPoint = {
   negativeCount: number
   negativeDisplay: number
   totalCount: number
+  postsCount: number
   isoStart: string
   isoEnd: string
 }
@@ -437,6 +439,51 @@ function SentimentJourneyEventOverlay({
   )
 }
 
+function SentimentJourneyPostsOverlay({
+  points,
+  plotLeftPx,
+  plotRightPx,
+}: {
+  points: Array<Pick<SentimentJourneyPoint, "postsCount">>
+  plotLeftPx: number
+  plotRightPx: number
+}) {
+  if (!points.length) return null
+
+  const maxPosts = points.reduce((acc, p) => Math.max(acc, Number(p.postsCount ?? 0)), 0)
+  if (!maxPosts) return null
+
+  const count = points.length
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      <div className="absolute top-0" style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}>
+        {points.map((p, idx) => {
+          const posts = Number(p.postsCount ?? 0)
+          const t = maxPosts ? posts / maxPosts : 0
+          const opacity = 0.08 + t * 0.42
+          const leftPct = ((idx + 0.5) / count) * 100
+
+          return (
+            <div
+              key={idx}
+              className="pointer-events-auto absolute rounded-[2px] bg-primary"
+              title={`${posts.toLocaleString()} posts`}
+              style={{
+                left: `calc(${leftPct}% - 2px)`,
+                bottom: 6,
+                width: "4px",
+                height: "10px",
+                opacity,
+              }}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
     month: "short",
@@ -494,6 +541,7 @@ function PlayerImage({ shirtNumber, name }: { shirtNumber: number | null; name: 
 
 export default function HomePage() {
   const router = useRouter()
+  const mainRef = useRef<HTMLElement>(null)
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
   
@@ -766,7 +814,7 @@ export default function HomePage() {
   }, [overview, playerPositionFilter, playerSortCol, playerSortDir])
 
   return (
-    <main className="max-w-screen-xl mx-auto px-6 py-8">
+    <main ref={mainRef} className="max-w-screen-xl mx-auto px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
           <GlobalSearch />
@@ -840,6 +888,10 @@ export default function HomePage() {
 
           <button
             type="button"
+            onClick={async () => {
+              if (!mainRef.current) return
+              await exportNodeToPdf(mainRef.current, "overview.pdf")
+            }}
             className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
           >
             <Download className="h-4 w-4" />
@@ -981,6 +1033,11 @@ export default function HomePage() {
               />
               <span>Normalize</span>
             </label>
+
+            <div className="ml-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-3 w-1.5 rounded-[2px] bg-primary/30" aria-hidden="true" />
+              <span>Posts</span>
+            </div>
           </div>
         </div>
 
@@ -990,18 +1047,21 @@ export default function HomePage() {
               config={sentimentJourneyChartConfig}
               className="h-[260px] w-full"
               overlay={
-                <SentimentJourneyEventOverlay
-                  points={sentimentJourneyData.points}
-                  events={sentimentJourneyEvents}
-                  plotLeftPx={40}
-                  plotRightPx={18}
-                  onMatchClick={(matchId) => router.push(`/events?match_id=${matchId}`)}
-                />
+                <>
+                  <SentimentJourneyPostsOverlay points={sentimentJourneyData.points} plotLeftPx={40} plotRightPx={18} />
+                  <SentimentJourneyEventOverlay
+                    points={sentimentJourneyData.points}
+                    events={sentimentJourneyEvents}
+                    plotLeftPx={40}
+                    plotRightPx={18}
+                    onMatchClick={(matchId) => router.push(`/events?match_id=${matchId}`)}
+                  />
+                </>
               }
             >
               <BarChart
                 data={sentimentJourneyChartData}
-                margin={{ top: 12, right: 18, left: 0, bottom: 0 }}
+                margin={{ top: 12, right: 18, left: 0, bottom: 18 }}
                 stackOffset="sign"
                 onClick={(state) => {
                   const s = state as any
@@ -1030,6 +1090,7 @@ export default function HomePage() {
                     if (!point) return null
 
                     const total = Number(point.totalCount ?? 0)
+                    const posts = Number(point.postsCount ?? 0)
                     const netPct =
                       total === 0
                         ? 0
@@ -1073,6 +1134,10 @@ export default function HomePage() {
                               Total: {total.toLocaleString()}
                             </div>
                           ) : null}
+                          <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/60">
+                            <span>Posts</span>
+                            <span className="tabular-nums">{posts.toLocaleString()}</span>
+                          </div>
                           <div className="flex items-center justify-between gap-2 pt-1 text-xs text-white/70">
                             <LineChartIcon className="h-3.5 w-3.5" />
                             <span className="tabular-nums">{netPct.toFixed(0)}%</span>

@@ -20,11 +20,13 @@ import {
   loadPlayerRatings,
   loadSentimentCountsByDay,
   loadPlayerSentimentCountsByDay,
+  loadPostsCountsByDay,
   loadTopExposures,
   parseIsoDateOnly,
   percentChange,
   pickMostControversial,
   pickMostPopular,
+  attachPostsCountsToPoints,
   toIsoDateOnly,
 } from "@/lib/overview-data"
 
@@ -159,6 +161,9 @@ export async function GET(req: Request) {
         ? buildWeeklyPoints(start, end, currentCountsByDay)
         : buildDailyPoints(start, end, currentCountsByDay)
 
+    const postsByDay = await loadPostsCountsByDay(startTs, endTs)
+    const pointsWithPosts = attachPostsCountsToPoints(points, postsByDay)
+
     const summary: SentimentJourneySummary = {
       positiveCount: currentPos,
       negativeCount: currentNeg,
@@ -209,7 +214,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const events = attachMatchesToPointsWithStats(points, matches, statsByMatchId)
+    const events = attachMatchesToPointsWithStats(pointsWithPosts, matches, statsByMatchId)
 
     const [currentMentionAgg, previousMentionAgg, hotTopics, playerRatings, motmCounts, topExposures] = await Promise.all([
       loadMentionAggregates(startTs, endTs, aliasToPlayer),
@@ -282,7 +287,7 @@ export async function GET(req: Request) {
       },
       aiSummary,
       sentimentJourney: {
-        points,
+        points: pointsWithPosts,
         summary,
         events,
       },

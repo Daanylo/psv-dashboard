@@ -3,7 +3,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Activity,
   ArrowRight,
@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { exportNodeToPdf } from "@/lib/export-pdf"
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
@@ -256,6 +257,8 @@ type EventReport = {
 export default function EventsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  const mainRef = useRef<HTMLElement>(null)
 
   const [matchSearch, setMatchSearch] = useState("")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
@@ -484,7 +487,7 @@ export default function EventsPage() {
   }, [report, playerPositionFilter, playerSortCol, playerSortDir])
 
   return (
-    <main className="max-w-screen-xl mx-auto px-6 py-8">
+    <main ref={mainRef} className="max-w-screen-xl mx-auto px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-[300px] flex-1">
           <GlobalSearch />
@@ -567,6 +570,10 @@ export default function EventsPage() {
 
           <button
             type="button"
+            onClick={async () => {
+              if (!mainRef.current) return
+              await exportNodeToPdf(mainRef.current, "events.pdf")
+            }}
             className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground hover:bg-accent"
           >
             <Download className="h-4 w-4" />

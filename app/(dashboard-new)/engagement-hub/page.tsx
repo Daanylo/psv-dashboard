@@ -1299,7 +1299,10 @@ export default function EngagementHubPage() {
           style={playerReportHeightPx ? { height: playerReportHeightPx } : undefined}
         >
           <div className="flex items-center justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">PLAYER REPORT</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <MessageSquareText className="h-4 w-4 text-primary" />
+              <span>PLAYER REPORT</span>
+            </div>
             <div className="flex items-center gap-2">
               <Select value={playerPositionFilter} onValueChange={setPlayerPositionFilter}>
                 <SelectTrigger className="h-9 w-auto gap-2 border-border bg-background px-3 text-sm text-foreground hover:bg-accent focus:ring-0 shadow-none">
@@ -1408,7 +1411,10 @@ export default function EngagementHubPage() {
           className="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-background md:w-[400px] md:min-w-[380px] md:flex-none"
         >
           <div className="flex items-baseline justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">SENTIMENT VS MARKET VALUE</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <BadgeEuro className="h-4 w-4 text-primary" />
+              <span>SENTIMENT VS MARKET VALUE</span>
+            </div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
 
@@ -1535,7 +1541,10 @@ export default function EngagementHubPage() {
         >
           <div className="px-6 py-4">
             <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">EVENTS</div>
+              <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+                <Flag className="h-4 w-4 text-primary" />
+                <span>EVENTS</span>
+              </div>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>

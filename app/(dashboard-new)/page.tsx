@@ -10,6 +10,7 @@ import {
   BadgeEuro,
   Calendar as CalendarIcon,
   Download,
+  Eye,
   Filter,
   Flag,
   LineChart as LineChartIcon,
@@ -1236,7 +1237,10 @@ export default function HomePage() {
       <section className="mt-6 grid w-full grid-cols-1 gap-6 md:grid-cols-3">
         <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background px-6 pt-6 pb-0">
           <div className="flex items-baseline justify-between gap-3">
-            <div className="text-base font-semibold font-psv-branding">MOST POPULAR</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <ThumbsUp className="h-4 w-4 text-primary" />
+              <span>MOST POPULAR</span>
+            </div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
 
@@ -1316,7 +1320,10 @@ export default function HomePage() {
         </div>
         <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-background px-6 pt-6 pb-0">
           <div className="flex items-baseline justify-between gap-3">
-            <div className="text-base font-semibold font-psv-branding">MOST CONTROVERSIAL</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <ArrowUpDown className="h-4 w-4 text-primary" />
+              <span>MOST CONTROVERSIAL</span>
+            </div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
 
@@ -1399,7 +1406,10 @@ export default function HomePage() {
         <div className="flex h-[215px] flex-col overflow-hidden rounded-xl border border-border bg-background">
           <div className="px-6 py-4">
             <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">EVENTS</div>
+              <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+                <Flag className="h-4 w-4 text-primary" />
+                <span>EVENTS</span>
+              </div>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>
@@ -1452,7 +1462,10 @@ export default function HomePage() {
       <section className="mt-6 grid w-full grid-cols-1 gap-6 md:flex md:h-[300px]">
         <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background md:flex-1 md:min-w-0">
           <div className="flex items-center justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">PLAYER REPORT</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <MessageSquareText className="h-4 w-4 text-primary" />
+              <span>PLAYER REPORT</span>
+            </div>
             <div className="flex items-center gap-2">
               <Select value={playerPositionFilter} onValueChange={setPlayerPositionFilter}>
                 <SelectTrigger className="h-9 w-auto gap-2 border-border bg-background px-3 text-sm text-foreground hover:bg-accent focus:ring-0 shadow-none">
@@ -1577,7 +1590,10 @@ export default function HomePage() {
 
         <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background md:w-[400px] md:min-w-[400px] md:flex-none">
           <div className="flex items-center justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">TOP EXPOSURES</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <Eye className="h-4 w-4 text-primary" />
+              <span>TOP EXPOSURES</span>
+            </div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
 

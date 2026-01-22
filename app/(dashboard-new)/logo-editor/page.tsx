@@ -33,6 +33,7 @@ type EditorDetection = {
   id: string // temporary ID for UI
   label: string
   confidence: number
+  modelVersion?: string
   box: {
     x: number // pixels
     y: number // pixels
@@ -254,6 +255,7 @@ function DetectionEditor({ post, onUpdate }: { post: Post, onUpdate: () => void 
                 id: Math.random().toString(36).substr(2, 9),
                 label: d.label,
                 confidence: d.confidence,
+              modelVersion: "best2.onnx",
                 box: d.box // box is already in pixels relative to natural size
             }))
 
@@ -274,7 +276,15 @@ function DetectionEditor({ post, onUpdate }: { post: Post, onUpdate: () => void 
                  method: "POST",
                  body: JSON.stringify({
                      postId: post.id,
-                     detections: detections
+             imageWidth: imageDimensions?.width ?? null,
+             imageHeight: imageDimensions?.height ?? null,
+             confidenceThreshold: 0.4,
+             detections: detections.map(d => ({
+              label: d.label,
+              confidence: d.confidence,
+              modelVersion: d.modelVersion ?? "manual",
+              box: d.box
+             }))
                  })
              })
              alert("Saved!")
@@ -343,6 +353,7 @@ function DetectionEditor({ post, onUpdate }: { post: Post, onUpdate: () => void 
             id: Math.random().toString(36).substr(2, 9),
             label: "unknown",
             confidence: 1.0,
+          modelVersion: "manual",
             box: { x, y, width, height }
         }
         

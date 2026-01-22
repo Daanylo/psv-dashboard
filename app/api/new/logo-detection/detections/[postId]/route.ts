@@ -18,6 +18,7 @@ export async function GET(
         id: d.id,
         label: d.logo_label,
         confidence: Number(d.confidence),
+        visibilityScore: d.visibility_score == null ? null : Number(d.visibility_score),
         box: {
           x: Number(d.box_x),
           y: Number(d.box_y),

@@ -1,16 +1,21 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { computeVisibilityScore } from '@/lib/visibility-score';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { postId, detections } = body as {
+    const { postId, detections, imageWidth, imageHeight, confidenceThreshold } = body as {
       postId: string;
       detections: Array<{
         label: string;
         confidence: number;
         box: { x: number; y: number; width: number; height: number };
+        modelVersion?: string;
       }>;
+      imageWidth?: number;
+      imageHeight?: number;
+      confidenceThreshold?: number;
     };
 
     if (!postId) {
@@ -27,13 +32,36 @@ export async function POST(request: Request) {
       [postId]
     );
 
+    let resolvedImageWidth: number | null = Number.isFinite(Number(imageWidth)) ? Number(imageWidth) : null
+    let resolvedImageHeight: number | null = Number.isFinite(Number(imageHeight)) ? Number(imageHeight) : null
+
+    if (!resolvedImageWidth || !resolvedImageHeight) {
+      const rows = await query<Array<{ image_width: number | null; image_height: number | null }>>(
+        `SELECT image_width, image_height FROM instagram_posts WHERE id = ? LIMIT 1`,
+        [postId],
+      )
+      resolvedImageWidth = rows[0]?.image_width != null ? Number(rows[0].image_width) : null
+      resolvedImageHeight = rows[0]?.image_height != null ? Number(rows[0].image_height) : null
+    }
+
     // 2. Insert new
     if (detections && detections.length > 0) {
       const values: any[] = [];
       const placeholders: string[] = [];
 
       detections.forEach(det => {
-        placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        const modelVersion = (det.modelVersion ?? '').trim() || 'manual'
+        const threshold = Number.isFinite(Number(confidenceThreshold)) ? Number(confidenceThreshold) : 0.5
+        const visibilityScore = computeVisibilityScore({
+          imageWidth: resolvedImageWidth,
+          imageHeight: resolvedImageHeight,
+          boxX: det.box?.x,
+          boxY: det.box?.y,
+          boxWidth: det.box?.width,
+          boxHeight: det.box?.height,
+        })
+
+        placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         values.push(
             postId, 
             det.label, 
@@ -42,13 +70,14 @@ export async function POST(request: Request) {
             det.box.y, 
             det.box.width, 
             det.box.height, 
-            'manual', // Model version or 'manual'
-            0.5 // Default threshold
+            modelVersion,
+            threshold,
+            visibilityScore
         );
       });
 
       const sql = `INSERT INTO logo_detections 
-        (post_id, logo_label, confidence, box_x, box_y, box_width, box_height, model_version, confidence_threshold) 
+        (post_id, logo_label, confidence, box_x, box_y, box_width, box_height, model_version, confidence_threshold, visibility_score) 
         VALUES ${placeholders.join(', ')}`;
 
       await query(sql, values);

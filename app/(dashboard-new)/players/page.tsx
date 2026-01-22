@@ -5,16 +5,25 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
+  Award,
   ArrowRight,
   ArrowUpDown,
   CalendarIcon,
+  CalendarDays,
+  Camera,
   Download,
   Filter,
+  Flag,
+  Footprints,
+  Gauge,
   LineChart as LineChartIcon,
+  MessageSquareText,
+  Target,
   ThumbsDown,
   ThumbsUp,
   TrendingDown,
   TrendingUp,
+  type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Separator } from "@/components/ui/separator"
@@ -31,7 +40,6 @@ import {
 } from "recharts"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Flag } from "lucide-react"
 
 type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 type JourneyGranularity = "daily" | "weekly"
@@ -314,40 +322,18 @@ export default function PlayersPage() {
   const [playerOverview, setPlayerOverview] = useState<OverviewSummaryResponse | null>(null)
   
   const [allPlayers, setAllPlayers] = useState<BasicPlayer[]>([])
-  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null)
+  const selectedPlayerId = useMemo(() => {
+    const raw = searchParams.get("player_id")
+    if (!raw) return null
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed) || parsed <= 0) return null
+    return parsed
+  }, [searchParams])
 
   const [socialAppearances, setSocialAppearances] = useState<SocialAppearance[]>([])
 
   const lastPlayerOverviewUrlRef = useRef<string | null>(null)
   const lastCommentsUrlRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    const raw = searchParams.get("player_id")
-    if (!raw) return
-
-    const parsed = Number(raw)
-    if (!Number.isFinite(parsed) || parsed <= 0) return
-
-    if (selectedPlayerId !== parsed) {
-      setSelectedPlayerId(parsed)
-    }
-  }, [searchParams, selectedPlayerId])
-
-  useEffect(() => {
-    const raw = searchParams.get("player_id")
-    const current = raw ? Number(raw) : null
-    const currentValid = current && Number.isFinite(current) && current > 0 ? current : null
-    const nextValid = selectedPlayerId && selectedPlayerId > 0 ? selectedPlayerId : null
-
-    if (currentValid === nextValid) return
-
-    const params = new URLSearchParams(searchParams.toString())
-    if (nextValid) params.set("player_id", String(nextValid))
-    else params.delete("player_id")
-
-    const qs = params.toString()
-    router.replace(qs ? `/players?${qs}` : "/players")
-  }, [router, searchParams, selectedPlayerId])
 
   const mentionsJourneyRef = useRef<HTMLDivElement | null>(null)
   const [eventMentionsHeightPx, setEventMentionsHeightPx] = useState<number | undefined>(undefined)
@@ -696,22 +682,30 @@ export default function PlayersPage() {
           ? allPlayers.find((p) => p.fotmobId === selectedPlayerId) ?? null
           : null
 
+        const iconByLabel: Record<string, LucideIcon> = {
+          "MATCHES PLAYED": CalendarDays,
+          "AVG PERFORMANCE": Gauge,
+          GOALS: Target,
+          ASSISTS: Footprints,
+          MOTM: Award,
+        }
+
         if (!overall) {
-             return [
-               { label: "MATCHES PLAYED", value: "—" },
-               { label: "AVG PERFORMANCE", value: "—" },
-               { label: "GOALS", value: "—" },
-               { label: "ASSISTS", value: "—" },
-               { label: "MOTM", value: "—" },
-             ]
+          return [
+            { label: "MATCHES PLAYED", value: "—", icon: iconByLabel["MATCHES PLAYED"] },
+            { label: "AVG PERFORMANCE", value: "—", icon: iconByLabel["AVG PERFORMANCE"] },
+            { label: "GOALS", value: "—", icon: iconByLabel.GOALS },
+            { label: "ASSISTS", value: "—", icon: iconByLabel.ASSISTS },
+            { label: "MOTM", value: "—", icon: iconByLabel.MOTM },
+          ]
         }
 
       return [
-        { label: "MATCHES PLAYED", value: overall.matchesPlayed.toLocaleString() },
-        { label: "AVG PERFORMANCE", value: overall.rating !== null ? overall.rating.toFixed(1) : "-" },
-        { label: "GOALS", value: overall.goals.toString() },
-        { label: "ASSISTS", value: overall.assists.toString() },
-        { label: "MOTM", value: overall.motm.toLocaleString() },
+        { label: "MATCHES PLAYED", value: overall.matchesPlayed.toLocaleString(), icon: iconByLabel["MATCHES PLAYED"] },
+        { label: "AVG PERFORMANCE", value: overall.rating !== null ? overall.rating.toFixed(1) : "-", icon: iconByLabel["AVG PERFORMANCE"] },
+        { label: "GOALS", value: overall.goals.toString(), icon: iconByLabel.GOALS },
+        { label: "ASSISTS", value: overall.assists.toString(), icon: iconByLabel.ASSISTS },
+        { label: "MOTM", value: overall.motm.toLocaleString(), icon: iconByLabel.MOTM },
       ] as const
     },
     [allPlayers, selectedPlayerId]
@@ -881,7 +875,10 @@ export default function PlayersPage() {
                             <button
                               key={p.fotmobId}
                               onClick={() => {
-                                setSelectedPlayerId(p.fotmobId)
+                                const params = new URLSearchParams(searchParams.toString())
+                                params.set("player_id", String(p.fotmobId))
+                                const qs = params.toString()
+                                router.replace(qs ? `/players?${qs}` : "/players")
                                 setIsFilterOpen(false)
                               }}
                               className={cn(
@@ -975,7 +972,10 @@ export default function PlayersPage() {
       <section className="grid w-full grid-cols-1 gap-6 md:grid-cols-5">
         {heroStats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border bg-background px-5 py-4">
-            <div className="text-base font-semibold font-psv-branding">{stat.label}</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <stat.icon className="h-4 w-4 text-primary" />
+              <span>{stat.label}</span>
+            </div>
             <div className="mt-2 font-psv-branding italic text-3xl leading-none tabular-nums">{stat.value}</div>
           </div>
         ))}
@@ -1269,7 +1269,10 @@ export default function PlayersPage() {
         >
           <div className="px-6 py-4">
             <div className="flex items-baseline justify-between gap-3">
-              <div className="text-base font-semibold font-psv-branding">EVENT MENTIONS</div>
+              <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+                <Flag className="h-4 w-4 text-primary" />
+                <span>EVENT MENTIONS</span>
+              </div>
               <div className="text-sm text-muted-foreground">{periodLabel}</div>
             </div>
           </div>
@@ -1313,7 +1316,10 @@ export default function PlayersPage() {
       <section className="mt-0 grid w-full grid-cols-1 gap-6 md:flex md:h-[320px]">
         <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background md:flex-1 md:min-w-0">
           <div className="flex items-center justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">PLAYER MENTIONS</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <MessageSquareText className="h-4 w-4 text-primary" />
+              <span>PLAYER MENTIONS</span>
+            </div>
             <div className="flex items-center gap-2">
               <Select value={commentsSentiment} onValueChange={(v: any) => setCommentsSentiment(v)}>
                 <SelectTrigger className="h-9 min-w-[100px]">
@@ -1388,7 +1394,10 @@ export default function PlayersPage() {
 
         <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background md:w-[400px] md:min-w-[400px] md:flex-none">
           <div className="flex items-center justify-between gap-3 px-6 py-4">
-            <div className="text-base font-semibold font-psv-branding">SOCIAL APPEAREANCES</div>
+            <div className="flex items-center gap-2 text-base font-semibold font-psv-branding">
+              <Camera className="h-4 w-4 text-primary" />
+              <span>SOCIAL APPEAREANCES</span>
+            </div>
             <div className="text-sm text-muted-foreground">{periodLabel}</div>
           </div>
 

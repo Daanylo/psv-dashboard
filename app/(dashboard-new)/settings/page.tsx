@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Loader2, CheckCircle, AlertCircle } from "lucide-react"
+import { Loader2, CheckCircle, AlertCircle, Palette } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type Brand = {
@@ -116,7 +116,10 @@ export default function SettingsPage() {
             {activeTab === "brands" && (
                 <div className="space-y-6">
                     <div>
-                        <h2 className="text-xl font-semibold font-psv-branding">Brands</h2>
+                        <h2 className="flex items-center gap-2 text-xl font-semibold font-psv-branding">
+                          <Palette className="h-5 w-5 text-primary" />
+                          <span>Brands</span>
+                        </h2>
                         <p className="text-sm text-muted-foreground">Manage colors and logos for reporting.</p>
                     </div>
 

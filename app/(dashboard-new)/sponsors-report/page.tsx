@@ -139,38 +139,14 @@ function slugify(value: string) {
 export default function SponsorsReportPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [dateRangeKey, setDateRangeKey] = useState<DateRangeKey>("30")
-  const [brandKey, setBrandKey] = useState<string>("puma")
   const [sortBy, setSortBy] = useState<SortKey>("impressions")
   const [availableBrands, setAvailableBrands] = useState<Brand[]>([])
   const [brandsLoading, setBrandsLoading] = useState(true)
-  const [hasMounted, setHasMounted] = useState(false)
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const brandParam = searchParams.get("brand")
+  const brandParam = (searchParams.get("brand") ?? "").toLowerCase().trim()
   const searchParamsStr = searchParams.toString()
-
-  useEffect(() => {
-    setHasMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (!brandParam) return
-    if (brandParam !== brandKey) setBrandKey(brandParam)
-  }, [brandParam, brandKey])
-
-  useEffect(() => {
-    if (!hasMounted) return
-
-    const sp = new URLSearchParams(searchParamsStr)
-    if (brandKey) sp.set("brand", brandKey)
-    else sp.delete("brand")
-
-    const nextStr = sp.toString()
-    if (nextStr === searchParamsStr) return
-
-    router.replace(`/sponsors-report${nextStr ? `?${nextStr}` : ""}`, { scroll: false })
-  }, [brandKey, hasMounted, router, searchParamsStr])
 
   // Fetch available brands
   useEffect(() => {
@@ -190,25 +166,32 @@ export default function SponsorsReportPage() {
     fetchBrands()
   }, [])
 
+  const brandKey = useMemo(() => {
+    if (!availableBrands.length) return brandParam || "puma"
+
+    if (!brandParam) return availableBrands[0].slug
+    if (availableBrands.some((b) => b.slug === brandParam)) return brandParam
+
+    const matchBySlugifiedName = availableBrands.find((b) => slugify(b.name) === brandParam)
+    if (matchBySlugifiedName) return matchBySlugifiedName.slug
+
+    return availableBrands[0].slug
+  }, [availableBrands, brandParam])
+
   useEffect(() => {
     if (!availableBrands.length) return
-
-    const normalized = (brandKey ?? "").toLowerCase().trim()
-    if (!normalized) {
-      setBrandKey(availableBrands[0].slug)
+    if (!brandParam) {
+      const sp = new URLSearchParams(searchParamsStr)
+      sp.set("brand", brandKey)
+      router.replace(`/sponsors-report?${sp.toString()}`, { scroll: false })
       return
     }
 
-    if (availableBrands.some((b) => b.slug === normalized)) return
-
-    const matchBySlugifiedName = availableBrands.find((b) => slugify(b.name) === normalized)
-    if (matchBySlugifiedName) {
-      setBrandKey(matchBySlugifiedName.slug)
-      return
-    }
-
-    setBrandKey(availableBrands[0].slug)
-  }, [availableBrands, brandKey])
+    if (brandParam === brandKey) return
+    const sp = new URLSearchParams(searchParamsStr)
+    sp.set("brand", brandKey)
+    router.replace(`/sponsors-report?${sp.toString()}`, { scroll: false })
+  }, [availableBrands.length, brandKey, brandParam, router, searchParamsStr])
   
   // State for fetched data
   const [data, setData] = useState<any>(null)
@@ -671,7 +654,11 @@ export default function SponsorsReportPage() {
                           name="brand"
                           value={brand.slug}
                           checked={selected}
-                          onChange={() => setBrandKey(brand.slug)}
+                          onChange={() => {
+                            const sp = new URLSearchParams(searchParams.toString())
+                            sp.set("brand", brand.slug)
+                            router.replace(`/sponsors-report?${sp.toString()}`, { scroll: false })
+                          }}
                           className="sr-only"
                         />
                         <div

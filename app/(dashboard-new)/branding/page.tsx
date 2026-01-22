@@ -1,7 +1,27 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Calendar as CalendarIcon, ChevronDown, ChevronRight, Download, Filter } from "lucide-react"
+import { useMemo, useState, type ReactNode } from "react"
+import {
+  Activity,
+  AlertTriangle,
+  ArrowUpDown,
+  BadgeEuro,
+  BarChart3,
+  Camera,
+  Eye,
+  LineChart as LineChartIcon,
+  PieChart,
+  Smile,
+  Star,
+  Target,
+  TrendingUp,
+  Calendar as CalendarIcon,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Filter,
+  type LucideIcon,
+} from "lucide-react"
 import { GlobalSearch } from "@/components/global-search"
 import {
   Card,
@@ -19,6 +39,17 @@ import {
 import { Separator } from "@/components/ui/separator"
 
 type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
+
+function Title({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
+  return (
+    <CardTitle className="text-base font-semibold font-psv-branding">
+      <span className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-primary" />
+        <span>{children}</span>
+      </span>
+    </CardTitle>
+  )
+}
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString("en-US", {
@@ -200,7 +231,7 @@ export default function BrandingPage() {
 
           <Card className="rounded-none shadow-none">
             <CardHeader className="px-4 pb-2 pt-0">
-              <CardTitle className="text-base font-semibold font-psv-branding">SOCIAL MEDIA POSTS</CardTitle>
+              <Title icon={Camera}>SOCIAL MEDIA POSTS</Title>
             </CardHeader>
             <CardContent>
               {/* Social media posts content will go here */}
@@ -210,7 +241,7 @@ export default function BrandingPage() {
           <div className="grid grid-cols-5 gap-4">
             <Card className="rounded-none shadow-none">
               <CardHeader className="px-4 pb-2 pt-0">
-                <CardTitle className="text-base font-semibold font-psv-branding">BRAND IMPRESSIONS</CardTitle>
+                <Title icon={Eye}>BRAND IMPRESSIONS</Title>
               </CardHeader>
               <CardContent>
                 {/* Content will go here */}
@@ -219,7 +250,7 @@ export default function BrandingPage() {
 
             <Card className="rounded-none shadow-none">
               <CardHeader className="px-4 pb-2 pt-0">
-                <CardTitle className="text-base font-semibold font-psv-branding">AVERAGE FAN SENTIMENT</CardTitle>
+                <Title icon={Smile}>AVERAGE FAN SENTIMENT</Title>
               </CardHeader>
               <CardContent>
                 {/* Content will go here */}
@@ -228,7 +259,7 @@ export default function BrandingPage() {
 
             <Card className="rounded-none shadow-none">
               <CardHeader className="px-4 pb-2 pt-0">
-                <CardTitle className="text-base font-semibold font-psv-branding">AVERAGE VISIBILITY SCORE</CardTitle>
+                <Title icon={Eye}>AVERAGE VISIBILITY SCORE</Title>
               </CardHeader>
               <CardContent>
                 {/* Content will go here */}
@@ -237,7 +268,7 @@ export default function BrandingPage() {
 
             <Card className="rounded-none shadow-none">
               <CardHeader className="px-4 pb-2 pt-0">
-                <CardTitle className="text-base font-semibold font-psv-branding">BRAND EXPOSURES</CardTitle>
+                <Title icon={Activity}>BRAND EXPOSURES</Title>
               </CardHeader>
               <CardContent>
                 {/* Content will go here */}
@@ -246,7 +277,7 @@ export default function BrandingPage() {
 
             <Card className="rounded-none shadow-none">
               <CardHeader className="px-4 pb-2 pt-0">
-                <CardTitle className="text-base font-semibold font-psv-branding">EXPOSURES PER POST</CardTitle>
+                <Title icon={BarChart3}>EXPOSURES PER POST</Title>
               </CardHeader>
               <CardContent>
                 {/* Content will go here */}
@@ -257,7 +288,7 @@ export default function BrandingPage() {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <Card className="rounded-none shadow-none">
               <CardHeader className="px-4 pb-2 pt-0">
-                <CardTitle className="text-base font-semibold font-psv-branding">Efficiency vs. Volume</CardTitle>
+                <Title icon={ArrowUpDown}>Efficiency vs. Volume</Title>
               </CardHeader>
               <CardContent>
                 {/* Content will go here */}
@@ -266,7 +297,7 @@ export default function BrandingPage() {
 
             <Card className="rounded-none shadow-none">
               <CardHeader className="px-4 pb-2 pt-0">
-                <CardTitle className="text-base font-semibold font-psv-branding">MISSED OPPORTUNITIES</CardTitle>
+                <Title icon={AlertTriangle}>MISSED OPPORTUNITIES</Title>
               </CardHeader>
               <CardContent>
                 {/* Content will go here */}
@@ -302,7 +333,7 @@ export default function BrandingPage() {
                 <div className="grid grid-cols-3 gap-4">
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">VISIBILITY SHARE</CardTitle>
+                      <Title icon={PieChart}>VISIBILITY SHARE</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Brand growth content will go here */}
@@ -311,7 +342,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">TREND GAP</CardTitle>
+                      <Title icon={TrendingUp}>TREND GAP</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Engagement rate content will go here */}
@@ -320,7 +351,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">EXPOSURE QUALITY RADAR</CardTitle>
+                      <Title icon={Target}>EXPOSURE QUALITY RADAR</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Reach analysis content will go here */}
@@ -330,7 +361,7 @@ export default function BrandingPage() {
 
                 <Card className="rounded-none shadow-none">
                   <CardHeader className="px-4 pb-2 pt-0">
-                    <CardTitle className="text-base font-semibold font-psv-branding">TREND GAP</CardTitle>
+                    <Title icon={TrendingUp}>TREND GAP</Title>
                   </CardHeader>
                   <CardContent>
                     {/* Trend gap content will go here */}
@@ -365,7 +396,7 @@ export default function BrandingPage() {
 
                 <Card className="rounded-none shadow-none">
                   <CardHeader className="px-4 pb-2 pt-0">
-                    <CardTitle className="text-base font-semibold font-psv-branding">BEST EXPOSURES</CardTitle>
+                    <Title icon={Star}>BEST EXPOSURES</Title>
                   </CardHeader>
                   <CardContent>
                     {/* Best exposures content will go here */}
@@ -375,7 +406,7 @@ export default function BrandingPage() {
                 <div className="grid grid-cols-3 gap-4">
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">ESTIMATED AMOUNT OF IMPRESSIONS</CardTitle>
+                      <Title icon={Eye}>ESTIMATED AMOUNT OF IMPRESSIONS</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Estimated amount of impressions content will go here */}
@@ -384,7 +415,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">AVERAGE FAN SENTIMENT</CardTitle>
+                      <Title icon={Smile}>AVERAGE FAN SENTIMENT</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Average fan sentiment content will go here */}
@@ -393,7 +424,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">ESTIMATED MEDIA VALUE</CardTitle>
+                      <Title icon={BadgeEuro}>ESTIMATED MEDIA VALUE</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Estimated media value content will go here */}
@@ -404,7 +435,7 @@ export default function BrandingPage() {
                 <div className="grid grid-cols-3 gap-4">
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">visibility share</CardTitle>
+                      <Title icon={PieChart}>visibility share</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Content will go here */}
@@ -413,7 +444,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">EXPOSURE QUALITY RADAR</CardTitle>
+                      <Title icon={Target}>EXPOSURE QUALITY RADAR</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Content will go here */}
@@ -422,7 +453,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">APPEARANCE HEATMAP</CardTitle>
+                      <Title icon={BarChart3}>APPEARANCE HEATMAP</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Content will go here */}
@@ -431,7 +462,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">CUMULATIVE IMPACT</CardTitle>
+                      <Title icon={TrendingUp}>CUMULATIVE IMPACT</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Content will go here */}
@@ -440,7 +471,7 @@ export default function BrandingPage() {
 
                   <Card className="rounded-none shadow-none">
                     <CardHeader className="px-4 pb-2 pt-0">
-                      <CardTitle className="text-base font-semibold font-psv-branding">VISIBILITY OVER TIME</CardTitle>
+                      <Title icon={LineChartIcon}>VISIBILITY OVER TIME</Title>
                     </CardHeader>
                     <CardContent>
                       {/* Content will go here */}
@@ -450,7 +481,7 @@ export default function BrandingPage() {
 
                 <Card className="rounded-none shadow-none">
                   <CardHeader className="px-4 pb-2 pt-0">
-                    <CardTitle className="text-base font-semibold font-psv-branding">EFFICIENCY VS. VOLUME</CardTitle>
+                    <Title icon={ArrowUpDown}>EFFICIENCY VS. VOLUME</Title>
                   </CardHeader>
                   <CardContent>
                     {/* Content will go here */}

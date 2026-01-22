@@ -1,3 +1,4 @@
+import { LifeBuoy } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function HelpPage() {
@@ -8,7 +9,12 @@ export default function HelpPage() {
         <div className="mt-4">
           <Card className="rounded-none shadow-none">
             <CardHeader className="px-4 pb-2 pt-0">
-              <CardTitle className="text-base font-semibold font-psv-branding">Support</CardTitle>
+              <CardTitle className="text-base font-semibold font-psv-branding">
+                <span className="flex items-center gap-2">
+                  <LifeBuoy className="h-4 w-4 text-primary" />
+                  <span>Support</span>
+                </span>
+              </CardTitle>
             </CardHeader>
             <CardContent />
           </Card>

@@ -68,11 +68,13 @@ export async function GET(req: Request) {
         player_id: number
         player_name: string | null
         shirt_number: number | null
+        position_group: string | null
+        position_ids_desc: string | null
         fotmob_rating: number | string | null
         minutes_played: number | null
       }>
     >(
-      `SELECT pmp.player_id, p.name as player_name, p.shirt_number, pmp.fotmob_rating, pmp.minutes_played
+      `SELECT pmp.player_id, p.name as player_name, p.shirt_number, p.position_group, p.position_ids_desc, pmp.fotmob_rating, pmp.minutes_played
        FROM player_match_performance pmp
        JOIN players p ON p.fotmob_id = pmp.player_id
        WHERE pmp.match_id = ?
@@ -82,13 +84,24 @@ export async function GET(req: Request) {
     )
 
     const performances = perfRows
-      .map((r) => ({
-        fotmobId: Number(r.player_id),
-        name: String(r.player_name ?? ""),
-        shirtNumber: r.shirt_number === null ? null : Number(r.shirt_number),
-        rating: Number(r.fotmob_rating),
-        minutes: Number(r.minutes_played ?? 0),
-      }))
+      .map((r) => {
+        let pos = r.position_group
+        if (r.position_ids_desc) {
+          const parts = r.position_ids_desc.split(",")
+          if (parts.length > 0 && parts[0].trim()) {
+            pos = parts[0].trim()
+          }
+        }
+
+        return {
+          fotmobId: Number(r.player_id),
+          name: String(r.player_name ?? ""),
+          shirtNumber: r.shirt_number === null ? null : Number(r.shirt_number),
+          position: pos,
+          rating: Number(r.fotmob_rating),
+          minutes: Number(r.minutes_played ?? 0),
+        }
+      })
       .filter((p) => p.name && Number.isFinite(p.rating))
       .sort((a, b) => b.rating - a.rating)
 
@@ -234,9 +247,11 @@ export async function GET(req: Request) {
           fotmobId: p.fotmobId,
           name: p.name,
           shirtNumber: p.shirtNumber,
+          position: p.position ?? null,
           rating: p.rating,
           mentions: m.total,
           positivePct: m.total ? (m.pos / m.total) * 100 : 0,
+          neutralPct: m.total ? (m.neu / m.total) * 100 : 0,
           negativePct: m.total ? (m.neg / m.total) * 100 : 0,
           diff: ratingUnit - sentimentUnit,
         }

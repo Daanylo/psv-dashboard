@@ -280,6 +280,7 @@ function makeMockJourney(
       negativeCount: neg,
       negativeDisplay: -neg,
       totalCount: total,
+      postsCount: 0,
       isoStart: toIsoDateOnly(visibleStart),
       isoEnd: toIsoDateOnly(visibleEnd),
     })
@@ -448,40 +449,7 @@ function SentimentJourneyPostsOverlay({
   plotLeftPx: number
   plotRightPx: number
 }) {
-  if (!points.length) return null
-
-  const maxPosts = points.reduce((acc, p) => Math.max(acc, Number(p.postsCount ?? 0)), 0)
-  if (!maxPosts) return null
-
-  const count = points.length
-
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10">
-      <div className="absolute top-0" style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}>
-        {points.map((p, idx) => {
-          const posts = Number(p.postsCount ?? 0)
-          const t = maxPosts ? posts / maxPosts : 0
-          const opacity = 0.08 + t * 0.42
-          const leftPct = ((idx + 0.5) / count) * 100
-
-          return (
-            <div
-              key={idx}
-              className="pointer-events-auto absolute rounded-[2px] bg-primary"
-              title={`${posts.toLocaleString()} posts`}
-              style={{
-                left: `calc(${leftPct}% - 2px)`,
-                bottom: 6,
-                width: "4px",
-                height: "10px",
-                opacity,
-              }}
-            />
-          )
-        })}
-      </div>
-    </div>
-  )
+  return null
 }
 
 function formatShortDate(date: Date) {
@@ -1033,11 +1001,6 @@ export default function HomePage() {
               />
               <span>Normalize</span>
             </label>
-
-            <div className="ml-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="h-3 w-1.5 rounded-[2px] bg-primary/30" aria-hidden="true" />
-              <span>Posts</span>
-            </div>
           </div>
         </div>
 
@@ -1048,7 +1011,6 @@ export default function HomePage() {
               className="h-[260px] w-full"
               overlay={
                 <>
-                  <SentimentJourneyPostsOverlay points={sentimentJourneyData.points} plotLeftPx={40} plotRightPx={18} />
                   <SentimentJourneyEventOverlay
                     points={sentimentJourneyData.points}
                     events={sentimentJourneyEvents}

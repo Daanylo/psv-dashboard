@@ -250,6 +250,9 @@ type EventReport = {
       sentiment: string
       date: string
       playerMentioned?: string | null
+      postUrl?: string
+      matchId?: number
+      matchTitle?: string
     }>
   }
 }
@@ -838,13 +841,33 @@ export default function EventsPage() {
                 <tr key={row.id} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
                   <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{index + 1}</td>
                   <td className="px-3 py-2">
-                    <div className="truncate" title={row.text}>
-                      {row.text}
-                    </div>
+                    {row.postUrl ? (
+                      <a
+                        href={row.postUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate hover:underline"
+                        title={row.text}
+                      >
+                        {row.text}
+                      </a>
+                    ) : (
+                      <div className="truncate" title={row.text}>
+                        {row.text}
+                      </div>
+                    )}
                     <div className="mt-0.5 text-[10px] text-muted-foreground">
-                      {[formatSafeDateOnly(row.date), row.playerMentioned, row.sentiment]
-                        .filter(Boolean)
-                        .join(" • ")}
+                      <span>{formatSafeDateOnly(row.date)}</span>
+                      {row.playerMentioned ? <span>{" • "}{row.playerMentioned}</span> : null}
+                      {row.sentiment ? <span>{" • "}{row.sentiment}</span> : null}
+                      {row.matchId ? (
+                        <>
+                          <span>{" • "}</span>
+                          <Link href={`/events?match_id=${row.matchId}`} className="hover:underline">
+                            {row.matchTitle || "Event"}
+                          </Link>
+                        </>
+                      ) : null}
                     </div>
                   </td>
                   <td className="w-20 px-3 py-2 text-right font-medium tabular-nums">{row.likes.toLocaleString()}</td>

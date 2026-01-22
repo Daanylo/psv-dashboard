@@ -4,6 +4,7 @@ import {
   createdAtSecondsExpr,
   loadMentionAggregates,
   loadPlayerDirectory,
+  toIsoDateOnly,
 } from "@/lib/overview-data"
 
 function clamp(value: number, min: number, max: number) {
@@ -295,6 +296,8 @@ export async function GET(req: Request) {
         created_at: string | Date | null
         created_at_ts: number | string | null
         player_mentioned: string | null
+        post_shortcode: string | null
+        post_url: string | null
       }>
     >(
       `SELECT
@@ -304,8 +307,11 @@ export async function GET(req: Request) {
          ic.sentiment,
          ic.created_at,
          ${createdAtSecondsExpr} as created_at_ts,
-         ic.player_mentioned
+         ic.player_mentioned,
+         ip.shortcode as post_shortcode,
+         ip.url as post_url
        FROM instagram_comments ic
+       LEFT JOIN instagram_posts ip ON ic.post_id = ip.id
        WHERE ic.created_at IS NOT NULL
          AND ${createdAtSecondsExpr} >= ?
          AND ${createdAtSecondsExpr} <= ?
@@ -317,9 +323,17 @@ export async function GET(req: Request) {
       commentParams,
     )
 
+    const matchIso = toIsoDateOnly(new Date(match.match_utc_time))
+    const matchTitle = `${match.home_team_name} vs ${match.away_team_name}`
+
     const playerMentionComments = mentionCommentRows.map((r) => {
       const ts = r.created_at_ts === null || r.created_at_ts === undefined ? null : Number(r.created_at_ts)
       const date = ts && Number.isFinite(ts) && ts > 0 ? new Date(ts * 1000).toISOString() : new Date().toISOString()
+
+      const shortcode = r.post_shortcode ?? null
+      const postUrl = (r.post_url && String(r.post_url).trim()) || (shortcode ? `https://www.instagram.com/p/${shortcode}/` : "")
+      const commentIso = ts && Number.isFinite(ts) && ts > 0 ? toIsoDateOnly(new Date(ts * 1000)) : null
+      const isMatchDay = !!(commentIso && matchIso && commentIso === matchIso)
 
       return {
         id: String(r.id),
@@ -328,6 +342,8 @@ export async function GET(req: Request) {
         sentiment: String(r.sentiment ?? ""),
         date,
         playerMentioned: r.player_mentioned,
+        ...(postUrl ? { postUrl: String(postUrl) } : {}),
+        ...(isMatchDay ? { matchId: Number(match.fotmob_match_id), matchTitle } : {}),
       }
     })
 

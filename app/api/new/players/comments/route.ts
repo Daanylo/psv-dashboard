@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import {
   loadPlayerDirectory,
   loadPlayerComments,
+  loadMatches,
   parseIsoDateOnly,
   toIsoDateOnly
 } from "@/lib/overview-data"
@@ -91,7 +92,35 @@ export async function GET(req: Request) {
         50
     )
 
-    const payload = { comments }
+    const matches = await loadMatches(startInclusive, endInclusive)
+    const matchByIsoDay = new Map<string, { matchId: number; title: string }>()
+
+    for (const m of matches) {
+      if (!m.match_utc_time) continue
+      const d = new Date(m.match_utc_time)
+      if (Number.isNaN(d.getTime())) continue
+      const iso = toIsoDateOnly(d)
+      if (!iso) continue
+
+      const matchId = Number(m.fotmob_match_id)
+      if (!Number.isFinite(matchId) || matchId <= 0) continue
+
+      matchByIsoDay.set(iso, {
+        matchId,
+        title: `${m.home_team_name} vs ${m.away_team_name}`,
+      })
+    }
+
+    const commentsWithEvents = comments.map((c: any) => {
+      const d = new Date(String(c.date ?? ""))
+      if (Number.isNaN(d.getTime())) return c
+      const iso = toIsoDateOnly(d)
+      const hit = iso ? matchByIsoDay.get(iso) : null
+      if (!hit) return c
+      return { ...c, matchId: hit.matchId, matchTitle: hit.title }
+    })
+
+    const payload = { comments: commentsWithEvents }
     setCached(cacheKey, payload)
     return NextResponse.json(payload)
   } catch (error) {

@@ -26,6 +26,8 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { PlayerFullReport, type PlayerFullReportData } from "@/components/reports/full-report"
+import { exportPagesToPdf } from "@/lib/export-pdf"
 import { exportNodeToPdf } from "@/lib/export-pdf"
 import { Separator } from "@/components/ui/separator"
 import { GlobalSearch } from "@/components/global-search"
@@ -425,6 +427,9 @@ export default function PlayersPage() {
   }, [searchParams])
 
   const [socialAppearances, setSocialAppearances] = useState<SocialAppearance[]>([])
+  const [playerFullReportLoading, setPlayerFullReportLoading] = useState(false)
+  const [playerFullReportData, setPlayerFullReportData] = useState<PlayerFullReportData | null>(null)
+  const playerFullReportRef = useRef<HTMLDivElement | null>(null)
 
   const lastSuccessfulPlayerOverviewUrlRef = useRef<string | null>(null)
   const lastSuccessfulCommentsUrlRef = useRef<string | null>(null)
@@ -729,6 +734,44 @@ export default function PlayersPage() {
     void run()
     return () => controller.abort()
   }, [selectedPlayerId, start, end])
+
+  const handleDownloadPlayerFullReport = async () => {
+    if (!selectedPlayerId) {
+      alert("Select a player first")
+      return
+    }
+    if (playerFullReportLoading) return
+
+    setPlayerFullReportLoading(true)
+    try {
+      const url = new URL("/api/new/players/full-report", window.location.origin)
+      url.searchParams.set("start", toIsoDateOnly(start))
+      url.searchParams.set("end", toIsoDateOnly(end))
+      url.searchParams.set("player_id", String(selectedPlayerId))
+      url.searchParams.set("limit", "60")
+
+      const res = await fetch(url.toString(), { cache: "no-store" })
+      if (!res.ok) throw new Error(`API ${res.status}`)
+      const json = (await res.json()) as PlayerFullReportData
+
+      setPlayerFullReportData(json)
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+
+      const container = playerFullReportRef.current
+      const pages = container ? (Array.from(container.querySelectorAll<HTMLElement>("[data-pdf-page]")) as HTMLElement[]) : []
+
+      const safeName = (selectedPlayer?.name || `player-${selectedPlayerId}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+      const filename = `${safeName}-full-report-${toIsoDateOnly(start)}-${toIsoDateOnly(end)}.pdf`
+      await exportPagesToPdf(pages, filename)
+    } catch (e) {
+      console.error(e)
+      alert("Failed to generate full report")
+    } finally {
+      setPlayerFullReportData(null)
+      setPlayerFullReportLoading(false)
+    }
+  }
 
   const player = useMemo(
     () => {
@@ -1512,7 +1555,21 @@ export default function PlayersPage() {
               <Camera className="h-4 w-4 text-primary" />
               <span>SOCIAL APPEAREANCES</span>
             </div>
-            <div className="text-sm text-muted-foreground">{periodLabel}</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadPlayerFullReport}
+                disabled={!selectedPlayerId || playerFullReportLoading}
+                className={cn(
+                  "inline-flex h-8 items-center gap-2 rounded-md border bg-background px-3 text-xs text-foreground hover:bg-accent",
+                  (!selectedPlayerId || playerFullReportLoading) && "opacity-60"
+                )}
+              >
+                <Download className="h-4 w-4" />
+                <span>{playerFullReportLoading ? "Generating…" : "Download full report"}</span>
+              </button>
+              <div className="text-sm text-muted-foreground">{periodLabel}</div>
+            </div>
           </div>
 
           <div className="flex-1 min-h-0 px-6 pb-6">
@@ -1553,6 +1610,17 @@ export default function PlayersPage() {
       </section>
       </>
       )}
+
+      {playerFullReportData ? (
+        <div
+          ref={playerFullReportRef}
+          aria-hidden
+          className="pointer-events-none"
+          style={{ position: "fixed", left: -10000, top: 0, width: 0, height: 0, overflow: "visible" }}
+        >
+          <PlayerFullReport data={playerFullReportData} />
+        </div>
+      ) : null}
     </main>
   )
 }

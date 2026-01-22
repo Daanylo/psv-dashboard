@@ -38,6 +38,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { SponsorFullReport, type SponsorFullReportData } from "@/components/reports/full-report"
+import { exportPagesToPdf } from "@/lib/export-pdf"
 
 type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 
@@ -142,6 +144,9 @@ export default function SponsorsReportPage() {
   const [sortBy, setSortBy] = useState<SortKey>("impressions")
   const [availableBrands, setAvailableBrands] = useState<Brand[]>([])
   const [brandsLoading, setBrandsLoading] = useState(true)
+  const [fullReportLoading, setFullReportLoading] = useState(false)
+  const [fullReportData, setFullReportData] = useState<SponsorFullReportData | null>(null)
+  const fullReportRef = useRef<HTMLDivElement | null>(null)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -281,6 +286,39 @@ export default function SponsorsReportPage() {
   const selectedBrand = useMemo(() => {
     return availableBrands.find((b) => b.slug === brandKey) ?? availableBrands[0] ?? { name: brandKey, slug: brandKey, color: "#999" }
   }, [brandKey, availableBrands])
+
+  const handleDownloadFullReport = async () => {
+    if (fullReportLoading) return
+    setFullReportLoading(true)
+    try {
+      const query = new URLSearchParams({
+        start: start.getTime().toString(),
+        end: end.getTime().toString(),
+        brand: brandKey,
+        limit: "60",
+      })
+
+      const res = await fetch(`/api/new/sponsors-report/full-report?${query.toString()}`)
+      if (!res.ok) throw new Error(`API ${res.status}`)
+      const json = (await res.json()) as SponsorFullReportData
+
+      setFullReportData(json)
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+
+      const container = fullReportRef.current
+      const pages = container ? (Array.from(container.querySelectorAll<HTMLElement>("[data-pdf-page]")) as HTMLElement[]) : []
+
+      const filename = `${selectedBrand.slug}-full-report-${toIsoDateOnly(start)}-${toIsoDateOnly(end)}.pdf`
+      await exportPagesToPdf(pages, filename)
+    } catch (e) {
+      console.error(e)
+      alert("Failed to generate full report")
+    } finally {
+      setFullReportData(null)
+      setFullReportLoading(false)
+    }
+  }
 
   // Fetch Data
   useEffect(() => {
@@ -787,6 +825,18 @@ export default function SponsorsReportPage() {
             <span>TOP EXPOSURES</span>
           </div>
           <div className="flex items-center gap-3">
+             <button
+               type="button"
+               onClick={handleDownloadFullReport}
+               disabled={fullReportLoading || loading}
+               className={cn(
+                 "inline-flex h-8 items-center gap-2 rounded-md border bg-background px-3 text-xs text-foreground hover:bg-accent",
+                 (fullReportLoading || loading) && "opacity-60"
+               )}
+             >
+               <Download className="h-4 w-4" />
+               <span>{fullReportLoading ? "Generating…" : "Download full report"}</span>
+             </button>
              <div className="flex items-center gap-2">
                  <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
                     <SelectTrigger className="h-8 w-[130px] text-xs">
@@ -899,6 +949,17 @@ export default function SponsorsReportPage() {
           </div>
         </div>
       </section>
+
+      {fullReportData ? (
+        <div
+          ref={fullReportRef}
+          aria-hidden
+          className="pointer-events-none"
+          style={{ position: "fixed", left: -10000, top: 0, width: 0, height: 0, overflow: "visible" }}
+        >
+          <SponsorFullReport data={fullReportData} />
+        </div>
+      ) : null}
 
       <section className="grid w-full grid-cols-1 gap-6 md:grid-cols-[2fr_1fr]">
         <div className="w-full rounded-xl border border-border bg-background overflow-hidden">

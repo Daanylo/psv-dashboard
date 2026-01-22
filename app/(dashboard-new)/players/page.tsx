@@ -47,33 +47,81 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 type DateRangeKey = "7" | "30" | "90" | "365" | "custom"
 type JourneyGranularity = "daily" | "weekly"
 
-function SentimentJourneyEventOverlay({
+type SentimentJourneyTaggedPost = {
+  id: string
+  xLabel: string
+  url: string
+  impressions?: number
+}
+
+function SentimentJourneyIndicatorOverlay({
   points,
   events,
+  taggedPosts,
   plotLeftPx,
   plotRightPx,
   onMatchClick,
 }: {
   points: SentimentJourneyPoint[]
   events: any[]
+  taggedPosts: SentimentJourneyTaggedPost[]
   plotLeftPx: number
   plotRightPx: number
   onMatchClick?: (matchId: number) => void
 }) {
-  if (!events.length || !points.length) return null
+  if (!points.length || (!events.length && !taggedPosts.length)) return null
 
   const count = points.length
   const indexCounts: Record<number, number> = {}
 
+  const markers: Array<
+    | {
+        kind: "event"
+        id: string
+        xLabel: string
+        title: string
+        subtitle?: string
+        playerRating?: number | null
+        playerGoals?: number
+        playerAssists?: number
+      }
+    | {
+        kind: "tag"
+        id: string
+        xLabel: string
+        url: string
+        impressions?: number
+      }
+  > = [
+    ...events.map((e: any) => ({
+      kind: "event" as const,
+      id: String(e.id),
+      xLabel: String(e.xLabel),
+      title: String(e.title ?? ""),
+      subtitle: e.subtitle ? String(e.subtitle) : undefined,
+      playerRating: e.playerRating ?? null,
+      playerGoals: e.playerGoals ?? 0,
+      playerAssists: e.playerAssists ?? 0,
+    })),
+    ...taggedPosts.map((t) => ({
+      kind: "tag" as const,
+      id: String(t.id),
+      xLabel: String(t.xLabel),
+      url: String(t.url),
+      impressions: t.impressions,
+    })),
+  ]
+
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
       <div className="absolute top-0" style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}>
-        {events.map((event) => {
-          const idx = points.findIndex((p) => p.label === event.xLabel)
+        {markers.map((marker) => {
+          const idx = points.findIndex((p) => p.label === marker.xLabel)
           if (idx < 0) return null
 
-          const matchId = Number(event.id)
-          const canNavigate = !!onMatchClick && Number.isFinite(matchId) && matchId > 0
+          const matchId = marker.kind === "event" ? Number(marker.id) : NaN
+          const canNavigateToMatch = marker.kind === "event" && !!onMatchClick && Number.isFinite(matchId) && matchId > 0
+          const canOpenPost = marker.kind === "tag" && !!marker.url
 
           const stackIndex = indexCounts[idx] || 0
           indexCounts[idx] = stackIndex + 1
@@ -82,7 +130,7 @@ function SentimentJourneyEventOverlay({
           const topOffset = -10 + (stackIndex * 32)
 
           return (
-            <div key={event.id} className="absolute" style={{ left: `${leftPct}%`, top: topOffset }}>
+            <div key={`${marker.kind}:${marker.id}`} className="absolute" style={{ left: `${leftPct}%`, top: topOffset }}>
               <div className="group pointer-events-auto relative z-10 hover:z-50" style={{ transform: "translateX(-14px)" }}>
                 <div
                   className={
@@ -91,16 +139,25 @@ function SentimentJourneyEventOverlay({
                     "transition-[width,padding,justify-content] duration-150 ease-out " +
                     "w-7 justify-center px-0 " +
                     "group-hover:w-[180px] group-hover:justify-start group-hover:px-2 " +
-                    (canNavigate ? "cursor-pointer" : "")
+                    (canNavigateToMatch || canOpenPost ? "cursor-pointer" : "")
                   }
                   onClick={(e) => {
-                    if (!canNavigate) return
                     e.stopPropagation()
-                    onMatchClick(matchId)
+                    if (canNavigateToMatch && onMatchClick) {
+                      onMatchClick(matchId)
+                      return
+                    }
+                    if (canOpenPost) {
+                      window.open(marker.url, "_blank", "noopener,noreferrer")
+                    }
                   }}
-                  role={canNavigate ? "button" : undefined}
+                  role={canNavigateToMatch || canOpenPost ? "button" : undefined}
                 >
-                  <Flag className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  {marker.kind === "event" ? (
+                    <Flag className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <Camera className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
                   <div
                     className={
                       "ml-0 group-hover:ml-2 overflow-hidden whitespace-nowrap " +
@@ -108,8 +165,14 @@ function SentimentJourneyEventOverlay({
                       "group-hover:max-w-[140px] group-hover:opacity-100"
                     }
                   >
-                    <div className={canNavigate ? "truncate text-xs font-medium text-foreground group-hover:underline" : "truncate text-xs font-medium text-foreground"}>
-                      {event.title}
+                    <div
+                      className={
+                        canNavigateToMatch || canOpenPost
+                          ? "truncate text-xs font-medium text-foreground group-hover:underline"
+                          : "truncate text-xs font-medium text-foreground"
+                      }
+                    >
+                      {marker.kind === "event" ? marker.title : "Tagged post"}
                     </div>
                   </div>
                 </div>
@@ -122,67 +185,36 @@ function SentimentJourneyEventOverlay({
                     "group-hover:opacity-100 group-hover:translate-y-0"
                   }
                 >
-                  <div className="truncate text-xs font-medium text-foreground">{event.title}</div>
-                  <div className="truncate text-[11px] leading-tight text-muted-foreground">{event.subtitle}</div>
-                  <div className="truncate text-[9px] leading-tight text-muted-foreground tabular-nums">
-                    {[
-                      `Rating ${
-                        event.playerRating === null || event.playerRating === undefined
-                          ? "—"
-                          : Number(event.playerRating).toFixed(1)
-                      }`,
-                      `G ${Number(event.playerGoals ?? 0)}`,
-                      `A ${Number(event.playerAssists ?? 0)}`,
-                    ].join(" · ")}
-                  </div>
+                  {marker.kind === "event" ? (
+                    <>
+                      <div className="truncate text-xs font-medium text-foreground">{marker.title}</div>
+                      <div className="truncate text-[11px] leading-tight text-muted-foreground">{marker.subtitle}</div>
+                      <div className="truncate text-[9px] leading-tight text-muted-foreground tabular-nums">
+                        {[
+                          `Rating ${
+                            marker.playerRating === null || marker.playerRating === undefined
+                              ? "—"
+                              : Number(marker.playerRating).toFixed(1)
+                          }`,
+                          `G ${Number(marker.playerGoals ?? 0)}`,
+                          `A ${Number(marker.playerAssists ?? 0)}`,
+                        ].join(" · ")}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="truncate text-xs font-medium text-foreground">Tagged post</div>
+                      <div className="truncate text-[11px] leading-tight text-muted-foreground">Open on Instagram</div>
+                      {Number.isFinite(Number(marker.impressions)) && Number(marker.impressions) > 0 && (
+                        <div className="truncate text-[9px] leading-tight text-muted-foreground tabular-nums">
+                          {`${Number(marker.impressions).toLocaleString()} impressions`}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function SentimentJourneyPostsOverlay({
-  points,
-  plotLeftPx,
-  plotRightPx,
-}: {
-  points: Array<Pick<SentimentJourneyPoint, "postsCount">>
-  plotLeftPx: number
-  plotRightPx: number
-}) {
-  if (!points.length) return null
-
-  const maxPosts = points.reduce((acc, p) => Math.max(acc, Number(p.postsCount ?? 0)), 0)
-  if (!maxPosts) return null
-
-  const count = points.length
-
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10">
-      <div className="absolute top-0" style={{ left: plotLeftPx, right: plotRightPx, height: "100%" }}>
-        {points.map((p, idx) => {
-          const posts = Number(p.postsCount ?? 0)
-          const t = maxPosts ? posts / maxPosts : 0
-          const opacity = 0.08 + t * 0.42
-          const leftPct = ((idx + 0.5) / count) * 100
-
-          return (
-            <div
-              key={idx}
-              className="pointer-events-auto absolute rounded-[2px] bg-primary"
-              title={`${posts.toLocaleString()} posts`}
-              style={{
-                left: `calc(${leftPct}% - 2px)`,
-                bottom: 6,
-                width: "4px",
-                height: "10px",
-                opacity,
-              }}
-            />
           )
         })}
       </div>
@@ -319,6 +351,9 @@ type PlayerComment = {
   sentiment: string
   date: string
   playerMentioned: string
+  postUrl?: string
+  matchId?: number
+  matchTitle?: string
 }
 
 type OverviewSummaryResponse = {
@@ -331,6 +366,7 @@ type OverviewSummaryResponse = {
     points: SentimentJourneyPoint[]
     summary: SentimentJourneySummary
     events: any[]
+    taggedPosts?: SentimentJourneyTaggedPost[]
   }
   mentionsJourney?: MentionsPoint[]
   playerMentions: {
@@ -903,6 +939,10 @@ export default function PlayersPage() {
     return sentimentJourney.events || []
   }, [sentimentJourney])
 
+  const sentimentJourneyTaggedPosts = useMemo(() => {
+    return (sentimentJourney as any)?.taggedPosts || []
+  }, [sentimentJourney])
+
   const sentimentJourneyDomainMax = useMemo(() => {
     const maxAbs = sentimentJourney.points.reduce((acc, p) => {
       const candidate = Math.max(p.positiveCount, p.negativeCount)
@@ -1176,11 +1216,6 @@ export default function PlayersPage() {
                 Weekly
               </button>
             </div>
-
-            <div className="ml-1 inline-flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="h-3 w-1.5 rounded-[2px] bg-primary/30" aria-hidden="true" />
-              <span>Posts</span>
-            </div>
           </div>
         </div>
 
@@ -1191,10 +1226,10 @@ export default function PlayersPage() {
               className="h-[260px] w-full"
               overlay={
                 <>
-                  <SentimentJourneyPostsOverlay points={sentimentJourneyData} plotLeftPx={40} plotRightPx={18} />
-                  <SentimentJourneyEventOverlay
+                  <SentimentJourneyIndicatorOverlay
                     points={sentimentJourneyData}
                     events={sentimentJourneyEvents}
+                    taggedPosts={sentimentJourneyTaggedPosts}
                     plotLeftPx={40}
                     plotRightPx={18}
                     onMatchClick={(matchId) => router.push(`/events?match_id=${matchId}`)}
@@ -1526,12 +1561,32 @@ export default function PlayersPage() {
                     <tr key={row.id} className={index % 2 === 0 ? "bg-background" : "bg-muted"}>
                       <td className="w-12 px-3 py-2 text-muted-foreground tabular-nums">{index + 1}</td>
                       <td className="px-3 py-2">
-                         <div className="truncate" title={row.text}>{row.text}</div>
+                         {row.postUrl ? (
+                           <a
+                             href={row.postUrl}
+                             target="_blank"
+                             rel="noopener noreferrer"
+                             className="block truncate hover:underline"
+                             title={row.text}
+                           >
+                             {row.text}
+                           </a>
+                         ) : (
+                           <div className="truncate" title={row.text}>
+                             {row.text}
+                           </div>
+                         )}
                          <div className="mt-0.5 text-[10px] text-muted-foreground">
-                             {[
-                             formatSafeDateOnly(row.date),
-                                 row.sentiment
-                             ].filter(Boolean).join(" • ")}
+                           <span>{formatSafeDateOnly(row.date)}</span>
+                           {row.sentiment ? <span>{" • "}{row.sentiment}</span> : null}
+                           {row.matchId ? (
+                             <>
+                               <span>{" • "}</span>
+                               <Link href={`/events?match_id=${row.matchId}`} className="hover:underline">
+                                 {row.matchTitle || "Event"}
+                               </Link>
+                             </>
+                           ) : null}
                          </div>
                       </td>
                       <td className="w-20 px-3 py-2 text-right font-medium tabular-nums">{row.likes.toLocaleString()}</td>

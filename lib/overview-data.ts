@@ -30,6 +30,14 @@ export type SentimentJourneyEvent = {
   playerAssists?: number
 }
 
+export type SentimentJourneyTaggedPost = {
+  id: string
+  xLabel: string
+  url: string
+  shortcode?: string | null
+  impressions: number
+}
+
 export type MentionsPoint = {
   label: string
   player: number
@@ -43,6 +51,10 @@ export type PlayerComment = {
   sentiment: string
   date: string
   playerMentioned: string
+  postUrl?: string
+  postShortcode?: string | null
+  matchId?: number
+  matchTitle?: string
 }
 
 export type MentionedPlayer = {
@@ -110,6 +122,7 @@ export type OverviewResponse = {
     points: SentimentJourneyPoint[]
     summary: SentimentJourneySummary
     events: SentimentJourneyEvent[]
+    taggedPosts?: SentimentJourneyTaggedPost[]
   }
   mentionsJourney: MentionsPoint[]
   playerMentions: {
@@ -1023,6 +1036,8 @@ export async function loadPlayerComments(
       player_mentioned: string | null
       text: string
       id: number
+      post_shortcode: string | null
+      post_url: string | null
     }[]>(
       `SELECT
          ${createdAtSecondsExpr} as created_at_ts,
@@ -1030,8 +1045,11 @@ export async function loadPlayerComments(
          ic.likes,
          ic.player_mentioned,
          ic.text,
-         ic.id
+         ic.id,
+         ip.shortcode as post_shortcode,
+         ip.url as post_url
        FROM instagram_comments ic
+       LEFT JOIN instagram_posts ip ON ic.post_id = ip.id
        WHERE ic.created_at IS NOT NULL
          AND ${createdAtSecondsExpr} >= ?
          AND ${createdAtSecondsExpr} <= ?
@@ -1060,6 +1078,9 @@ export async function loadPlayerComments(
     }
 
     if (relevant) {
+      const shortcode = row.post_shortcode ?? null
+      const postUrl = (row.post_url && String(row.post_url).trim()) || (shortcode ? `https://www.instagram.com/p/${shortcode}/` : "")
+
       relevantComments.push({
         id: row.id.toString(),
         text: row.text,
@@ -1067,6 +1088,8 @@ export async function loadPlayerComments(
         sentiment: (row.sentiment || "").trim().toLowerCase(),
         date: new Date(row.created_at_ts * 1000).toISOString(),
         playerMentioned: row.player_mentioned,
+        ...(postUrl ? { postUrl: String(postUrl) } : {}),
+        postShortcode: shortcode,
       })
     }
   }

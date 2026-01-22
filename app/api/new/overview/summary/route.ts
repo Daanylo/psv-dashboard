@@ -5,6 +5,7 @@ import {
   OverviewResponse,
   PlayerReportItem,
   SentimentJourneySummary,
+  SentimentJourneyTaggedPost,
   addDaysUtc,
   attachMatchesToPointsWithStats,
   buildDailyPoints,
@@ -27,8 +28,179 @@ import {
   pickMostControversial,
   pickMostPopular,
   attachPostsCountsToPoints,
+  parseListText,
   toIsoDateOnly,
 } from "@/lib/overview-data"
+
+function looksLikeInstagramHandle(value: string) {
+  const v = value.trim().replace(/^@/, "")
+  if (v.length < 3 || v.length > 40) return false
+  if (v.includes(" ")) return false
+  return /^[A-Za-z0-9._]+$/.test(v)
+}
+
+function handleFromInstagramUrl(raw: unknown) {
+  if (!raw) return null
+  const text = String(raw).trim()
+  if (!text) return null
+
+  try {
+    const url = new URL(text)
+    const parts = url.pathname.split("/").filter(Boolean)
+    if (parts.length === 0) return null
+    const candidate = parts[0]
+    if (!candidate) return null
+    if (candidate === "p" || candidate === "reel" || candidate === "tv") return null
+    const cleaned = candidate.replace(/^@/, "")
+    return looksLikeInstagramHandle(cleaned) ? cleaned : null
+  } catch {
+    const cleaned = text
+      .replace(/^@/, "")
+      .replace(/^https?:\/\/www\.instagram\.com\//i, "")
+      .split("/")[0]
+      ?.trim()
+    if (!cleaned) return null
+    if (cleaned === "p" || cleaned === "reel" || cleaned === "tv") return null
+    return looksLikeInstagramHandle(cleaned) ? cleaned : null
+  }
+}
+
+function uniq<T>(values: T[]) {
+  return Array.from(new Set(values))
+}
+
+function parseAliases(raw: unknown) {
+  if (raw == null) return []
+  if (Array.isArray(raw)) return raw.map((v) => String(v)).filter(Boolean)
+  return parseListText(String(raw))
+}
+
+async function loadPlayerInstagramHandles(playerId: number) {
+  const playerRows = await query<Array<{ aliases: unknown; instagram_url: unknown }>>(
+    `SELECT aliases, instagram_url FROM players WHERE fotmob_id = ? LIMIT 1`,
+    [playerId],
+  )
+
+  const aliases = parseAliases(playerRows[0]?.aliases)
+  const handles = uniq(
+    [
+      ...aliases.map((a) => a.trim().replace(/^@/, "")),
+      handleFromInstagramUrl(playerRows[0]?.instagram_url) ?? "",
+    ]
+      .map((a) => a.trim().replace(/^@/, ""))
+      .filter((a) => looksLikeInstagramHandle(a)),
+  ).slice(0, 12)
+
+  return handles
+}
+
+async function loadTopTaggedPostByDay(startTs: number, endTs: number, handles: string[]) {
+  if (handles.length === 0) return []
+
+  const clauses = handles.map(() => `JSON_CONTAINS(ip.tagged_users, CAST('1' AS JSON), ?)`)
+  const whereTagged = `(${clauses.join(" OR ")})`
+  const paths = handles.map((h) => `$."${h}"`)
+
+  const rows = await query<
+    Array<{
+      day: string
+      id: number
+      shortcode: string | null
+      url: string | null
+      taken_at_timestamp: number | string | null
+      impressions: number | string | null
+    }>
+  >(
+    `SELECT
+       DATE_FORMAT(DATE(FROM_UNIXTIME(ip.taken_at_timestamp)), '%Y-%m-%d') as day,
+       ip.id,
+       ip.shortcode,
+       ip.url,
+       ip.taken_at_timestamp,
+       COALESCE(ip.estimated_reach, ip.video_view_count, 0) as impressions
+     FROM instagram_posts ip
+     INNER JOIN (
+       SELECT
+         DATE_FORMAT(DATE(FROM_UNIXTIME(ip.taken_at_timestamp)), '%Y-%m-%d') as day,
+         MAX(COALESCE(ip.estimated_reach, ip.video_view_count, 0)) as max_impressions
+       FROM instagram_posts ip
+       WHERE ip.tagged_users IS NOT NULL
+         AND ip.taken_at_timestamp IS NOT NULL
+         AND CAST(ip.taken_at_timestamp AS UNSIGNED) >= ?
+         AND CAST(ip.taken_at_timestamp AS UNSIGNED) <= ?
+         AND ${whereTagged}
+       GROUP BY day
+     ) mx
+       ON mx.day = DATE_FORMAT(DATE(FROM_UNIXTIME(ip.taken_at_timestamp)), '%Y-%m-%d')
+      AND mx.max_impressions = COALESCE(ip.estimated_reach, ip.video_view_count, 0)
+     WHERE ip.tagged_users IS NOT NULL
+       AND ip.taken_at_timestamp IS NOT NULL
+       AND CAST(ip.taken_at_timestamp AS UNSIGNED) >= ?
+       AND CAST(ip.taken_at_timestamp AS UNSIGNED) <= ?
+       AND ${whereTagged}`,
+    [startTs, endTs, ...paths, startTs, endTs, ...paths],
+  )
+
+  return rows
+}
+
+function taggedPostsForPoints(
+  points: Array<{ label: string; isoStart: string; isoEnd: string }>,
+  dailyTop: Array<{ day: string; id: number; shortcode: string | null; url: string | null; impressions: number | string | null }>,
+) {
+  const byDay = new Map<string, { id: number; shortcode: string | null; url: string | null; impressions: number }>()
+  for (const row of dailyTop) {
+    const dayKey = String(row.day).slice(0, 10)
+    const impressions = Number(row.impressions ?? 0)
+    const existing = byDay.get(dayKey)
+    if (!existing || impressions > existing.impressions) {
+      byDay.set(dayKey, {
+        id: Number(row.id),
+        shortcode: row.shortcode ?? null,
+        url: row.url ?? null,
+        impressions,
+      })
+    }
+  }
+
+  const out: SentimentJourneyTaggedPost[] = []
+  for (const p of points) {
+    const start = parseIsoDateOnly(p.isoStart)
+    const end = parseIsoDateOnly(p.isoEnd)
+    if (!start || !end) continue
+
+    let best: { id: number; shortcode: string | null; url: string | null; impressions: number } | null = null
+    let cursor = new Date(start)
+    cursor.setUTCHours(0, 0, 0, 0)
+
+    const endDay = new Date(end)
+    endDay.setUTCHours(0, 0, 0, 0)
+
+    while (cursor <= endDay) {
+      const iso = toIsoDateOnly(cursor)
+      const hit = byDay.get(iso)
+      if (hit && (!best || hit.impressions > best.impressions)) {
+        best = hit
+      }
+      cursor = addDaysUtc(cursor, 1)
+    }
+
+    if (!best) continue
+
+    const url = best.url || (best.shortcode ? `https://www.instagram.com/p/${best.shortcode}/` : "")
+    if (!url) continue
+
+    out.push({
+      id: String(best.id),
+      xLabel: p.label,
+      url,
+      shortcode: best.shortcode,
+      impressions: best.impressions,
+    })
+  }
+
+  return out
+}
 
 type CacheEntry<T> = { at: number; value: T }
 
@@ -164,6 +336,15 @@ export async function GET(req: Request) {
     const postsByDay = await loadPostsCountsByDay(startTs, endTs)
     const pointsWithPosts = attachPostsCountsToPoints(points, postsByDay)
 
+    let taggedPosts: SentimentJourneyTaggedPost[] = []
+    if (playerId) {
+      const handles = await loadPlayerInstagramHandles(playerId)
+      if (handles.length > 0) {
+        const dailyTopTagged = await loadTopTaggedPostByDay(startTs, endTs, handles)
+        taggedPosts = taggedPostsForPoints(pointsWithPosts, dailyTopTagged)
+      }
+    }
+
     const summary: SentimentJourneySummary = {
       positiveCount: currentPos,
       negativeCount: currentNeg,
@@ -290,6 +471,7 @@ export async function GET(req: Request) {
         points: pointsWithPosts,
         summary,
         events,
+        taggedPosts,
       },
       mentionsJourney,
       playerMentions: {

@@ -6,7 +6,7 @@ import {
   PlayerReportItem,
   SentimentJourneySummary,
   addDaysUtc,
-  attachMatchesToPoints,
+  attachMatchesToPointsWithStats,
   buildDailyPoints,
   buildWeeklyPoints,
   createdAtSecondsExpr,
@@ -167,7 +167,49 @@ export async function GET(req: Request) {
     }
 
     const matches = await loadMatches(start, end)
-    const events = attachMatchesToPoints(points, matches)
+    let statsByMatchId:
+      | Map<number, { playerRating: number | null; playerGoals: number; playerAssists: number }>
+      | undefined
+
+    if (playerId && matches.length > 0) {
+      const matchIds = matches
+        .map((m) => Number(m.fotmob_match_id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+
+      if (matchIds.length > 0) {
+        const placeholders = matchIds.map(() => "?").join(",")
+        const rows = await query<
+          Array<{
+            match_id: number
+            fotmob_rating: number | string | null
+            goals: number | string | null
+            assists: number | string | null
+          }>
+        >(
+          `SELECT match_id, fotmob_rating, goals, assists
+           FROM player_match_performance
+           WHERE player_id = ?
+             AND match_id IN (${placeholders})`,
+          [playerId, ...matchIds],
+        )
+
+        statsByMatchId = new Map()
+        for (const row of rows) {
+          const matchId = Number(row.match_id)
+          if (!Number.isFinite(matchId) || matchId <= 0) continue
+          statsByMatchId.set(matchId, {
+            playerRating:
+              row.fotmob_rating === null || row.fotmob_rating === undefined
+                ? null
+                : Number(row.fotmob_rating),
+            playerGoals: Number(row.goals ?? 0),
+            playerAssists: Number(row.assists ?? 0),
+          })
+        }
+      }
+    }
+
+    const events = attachMatchesToPointsWithStats(points, matches, statsByMatchId)
 
     const [currentMentionAgg, previousMentionAgg, hotTopics, playerRatings, motmCounts, topExposures] = await Promise.all([
       loadMentionAggregates(startTs, endTs, aliasToPlayer),

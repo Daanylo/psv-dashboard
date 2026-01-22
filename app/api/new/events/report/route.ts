@@ -26,6 +26,8 @@ export async function GET(req: Request) {
     const url = new URL(req.url)
     const matchIdParam = url.searchParams.get("match_id")
     const matchId = matchIdParam ? Number(matchIdParam) : null
+    const sort = url.searchParams.get("sort") || "likes"
+    const sentiment = url.searchParams.get("sentiment") || "all"
 
     if (!matchId || !Number.isFinite(matchId)) {
       return NextResponse.json({ error: "Missing or invalid match_id" }, { status: 400 })
@@ -179,11 +181,13 @@ export async function GET(req: Request) {
       Array<{
         impressions: number | string | null
         postCount: number | string | null
+        engagement: number | string | null
       }>
     >(
       `SELECT
          SUM(COALESCE(ip.estimated_reach, ip.video_view_count, 0)) as impressions,
-         COUNT(*) as postCount
+         COUNT(*) as postCount,
+         SUM(COALESCE(ip.like_count, 0) + COALESCE(ip.comment_count, 0)) as engagement
        FROM instagram_posts ip
        WHERE ip.taken_at_timestamp IS NOT NULL
          AND ip.taken_at_timestamp >= ?
@@ -197,13 +201,21 @@ export async function GET(req: Request) {
         shortcode: string | null
         url: string | null
         impressions: number | string | null
+        taken_at_timestamp: number | string | null
+        caption: string | null
+        like_count: number | string | null
+        comment_count: number | string | null
       }>
     >(
       `SELECT
          ip.id,
          ip.shortcode,
          ip.url,
-         COALESCE(ip.estimated_reach, ip.video_view_count, 0) as impressions
+         COALESCE(ip.estimated_reach, ip.video_view_count, 0) as impressions,
+         ip.taken_at_timestamp,
+         ip.caption,
+         ip.like_count,
+         ip.comment_count
        FROM instagram_posts ip
        WHERE ip.taken_at_timestamp IS NOT NULL
          AND ip.taken_at_timestamp >= ?
@@ -229,6 +241,9 @@ export async function GET(req: Request) {
 
     const impressions = Number(postsRows[0]?.impressions ?? 0)
     const postCount = Number(postsRows[0]?.postCount ?? 0)
+    const engagement = Number(postsRows[0]?.engagement ?? 0)
+
+    const sentimentScorePct = net * 100
 
     const { aliasToPlayer } = await loadPlayerDirectory()
     const mentionAgg = await loadMentionAggregates(startTs, endTs, aliasToPlayer)
@@ -259,6 +274,62 @@ export async function GET(req: Request) {
       .filter((r) => r.mentions >= 3)
       .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
       .slice(0, 6)
+
+    const sentimentValue = sentiment.toLowerCase().trim()
+    const sentimentClause =
+      sentimentValue === "positive" || sentimentValue === "neutral" || sentimentValue === "negative"
+        ? "AND LOWER(TRIM(ic.sentiment)) = ?"
+        : ""
+
+    const commentParams: Array<number | string> = [startTs, endTs]
+    if (sentimentClause) commentParams.push(sentimentValue)
+
+    const orderBy = sort === "time" ? "ic.created_at_ts DESC" : "COALESCE(ic.likes, 0) DESC"
+
+    const mentionCommentRows = await query<
+      Array<{
+        id: number
+        text: string | null
+        likes: number | string | null
+        sentiment: string | null
+        created_at: string | Date | null
+        created_at_ts: number | string | null
+        player_mentioned: string | null
+      }>
+    >(
+      `SELECT
+         ic.id,
+         ic.text,
+         ic.likes,
+         ic.sentiment,
+         ic.created_at,
+         ${createdAtSecondsExpr} as created_at_ts,
+         ic.player_mentioned
+       FROM instagram_comments ic
+       WHERE ic.created_at IS NOT NULL
+         AND ${createdAtSecondsExpr} >= ?
+         AND ${createdAtSecondsExpr} <= ?
+         AND ic.player_mentioned IS NOT NULL
+         AND TRIM(ic.player_mentioned) <> ''
+         ${sentimentClause}
+       ORDER BY ${orderBy}
+       LIMIT 50`,
+      commentParams,
+    )
+
+    const playerMentionComments = mentionCommentRows.map((r) => {
+      const ts = r.created_at_ts === null || r.created_at_ts === undefined ? null : Number(r.created_at_ts)
+      const date = ts && Number.isFinite(ts) && ts > 0 ? new Date(ts * 1000).toISOString() : new Date().toISOString()
+
+      return {
+        id: String(r.id),
+        text: String(r.text ?? ""),
+        likes: Number(r.likes ?? 0),
+        sentiment: String(r.sentiment ?? ""),
+        date,
+        playerMentioned: r.player_mentioned,
+      }
+    })
 
     return NextResponse.json({
       match: {
@@ -294,16 +365,23 @@ export async function GET(req: Request) {
         impressions: {
           total: impressions,
           postCount,
+          engagement,
+          sentimentScorePct,
           topPosts: topPosts.map((p) => ({
             id: String(p.id),
             shortcode: p.shortcode,
             url: p.url,
             imageUrl: p.shortcode ? `https://www.instagram.com/p/${p.shortcode}/media/?size=l` : p.url || "",
             impressions: Number(p.impressions ?? 0),
+            takenAtTimestamp: p.taken_at_timestamp === null || p.taken_at_timestamp === undefined ? null : Number(p.taken_at_timestamp),
+            caption: p.caption ?? "",
+            likes: Number(p.like_count ?? 0),
+            comments: Number(p.comment_count ?? 0),
           })),
         },
         topics: topics.map((t) => ({ topic: t.topic, count: Number(t.count ?? 0) })),
         playerSentimentVsRating,
+        playerMentionComments,
       },
     })
   } catch (error) {

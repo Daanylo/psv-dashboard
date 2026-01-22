@@ -24,6 +24,9 @@ export type SentimentJourneyEvent = {
   xLabel: string
   title: string
   subtitle: string
+  playerRating?: number | null
+  playerGoals?: number
+  playerAssists?: number
 }
 
 export type MentionsPoint = {
@@ -687,6 +690,20 @@ export async function loadMatches(start: Date, end: Date) {
 }
 
 export function attachMatchesToPoints(points: SentimentJourneyPoint[], matches: MatchRow[]) {
+  return attachMatchesToPointsWithStats(points, matches)
+}
+
+type PlayerMatchEventStats = {
+  playerRating: number | null
+  playerGoals: number
+  playerAssists: number
+}
+
+export function attachMatchesToPointsWithStats(
+  points: SentimentJourneyPoint[],
+  matches: MatchRow[],
+  statsByMatchId?: Map<number, PlayerMatchEventStats>,
+) {
   const events: SentimentJourneyEvent[] = []
 
   for (const match of matches) {
@@ -707,11 +724,14 @@ export function attachMatchesToPoints(points: SentimentJourneyPoint[], matches: 
     if (match.score_str) subtitleParts.push(match.score_str)
     const subtitle = subtitleParts.join(" · ") || "Match"
 
+    const stats = statsByMatchId?.get(Number(match.fotmob_match_id))
+
     events.push({
       id: String(match.fotmob_match_id),
       xLabel: point.label,
       title,
       subtitle,
+      ...(stats ? stats : {}),
     })
   }
 

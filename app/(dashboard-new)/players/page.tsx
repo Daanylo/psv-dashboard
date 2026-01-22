@@ -84,6 +84,7 @@ function SentimentJourneyEventOverlay({
                 <div
                   className={
                     "flex items-center overflow-hidden rounded-md border border-border bg-background " +
+                    "h-[30px] max-h-[30px] " +
                     "transition-[width,padding,justify-content] duration-150 ease-out " +
                     "w-7 justify-center px-0 " +
                     "group-hover:w-[180px] group-hover:justify-start group-hover:px-2 " +
@@ -107,7 +108,29 @@ function SentimentJourneyEventOverlay({
                     <div className={canNavigate ? "truncate text-xs font-medium text-foreground group-hover:underline" : "truncate text-xs font-medium text-foreground"}>
                       {event.title}
                     </div>
-                    <div className="truncate text-[11px] text-muted-foreground">{event.subtitle}</div>
+                  </div>
+                </div>
+
+                <div
+                  className={
+                    "pointer-events-none absolute left-0 top-full mt-1 w-[180px] " +
+                    "rounded-md border border-border bg-background px-2 py-1 shadow-md " +
+                    "opacity-0 translate-y-1 transition-all duration-150 ease-out " +
+                    "group-hover:opacity-100 group-hover:translate-y-0"
+                  }
+                >
+                  <div className="truncate text-xs font-medium text-foreground">{event.title}</div>
+                  <div className="truncate text-[11px] leading-tight text-muted-foreground">{event.subtitle}</div>
+                  <div className="truncate text-[9px] leading-tight text-muted-foreground tabular-nums">
+                    {[
+                      `Rating ${
+                        event.playerRating === null || event.playerRating === undefined
+                          ? "—"
+                          : Number(event.playerRating).toFixed(1)
+                      }`,
+                      `G ${Number(event.playerGoals ?? 0)}`,
+                      `A ${Number(event.playerAssists ?? 0)}`,
+                    ].join(" · ")}
                   </div>
                 </div>
               </div>
@@ -125,6 +148,28 @@ function formatShortDate(date: Date) {
     day: "numeric",
     year: "numeric",
   })
+}
+
+function formatSafeDateOnly(value: string) {
+  const raw = (value ?? "").trim()
+  if (!raw) return "—"
+
+  if (/^\d+$/.test(raw)) {
+    const num = Number(raw)
+    if (Number.isFinite(num)) {
+      if (raw.length === 10) {
+        const d = new Date(num * 1000)
+        return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString()
+      }
+      if (raw.length === 13) {
+        const d = new Date(num)
+        return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString()
+      }
+    }
+  }
+
+  const d = new Date(raw)
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString()
 }
 
 function toIsoDateOnly(date: Date) {
@@ -332,8 +377,8 @@ export default function PlayersPage() {
 
   const [socialAppearances, setSocialAppearances] = useState<SocialAppearance[]>([])
 
-  const lastPlayerOverviewUrlRef = useRef<string | null>(null)
-  const lastCommentsUrlRef = useRef<string | null>(null)
+  const lastSuccessfulPlayerOverviewUrlRef = useRef<string | null>(null)
+  const lastSuccessfulCommentsUrlRef = useRef<string | null>(null)
 
   const mentionsJourneyRef = useRef<HTMLDivElement | null>(null)
   const [eventMentionsHeightPx, setEventMentionsHeightPx] = useState<number | undefined>(undefined)
@@ -525,6 +570,7 @@ export default function PlayersPage() {
   useEffect(() => {
     if (!selectedPlayerId) {
       setPlayerOverview(null)
+      lastSuccessfulPlayerOverviewUrlRef.current = null
       return
     }
 
@@ -538,8 +584,7 @@ export default function PlayersPage() {
         url.searchParams.set("player_id", String(selectedPlayerId))
 
         const requestUrl = url.toString()
-        if (lastPlayerOverviewUrlRef.current === requestUrl) return
-        lastPlayerOverviewUrlRef.current = requestUrl
+        if (lastSuccessfulPlayerOverviewUrlRef.current === requestUrl) return
 
         const res = await fetch(requestUrl, {
           cache: "no-store",
@@ -547,6 +592,7 @@ export default function PlayersPage() {
         })
         if (!res.ok) throw new Error(`API ${res.status}`)
         const data = (await res.json()) as OverviewSummaryResponse
+        lastSuccessfulPlayerOverviewUrlRef.current = requestUrl
         setPlayerOverview(data)
       } catch (err: unknown) {
         if (err instanceof DOMException && err.name === "AbortError") return
@@ -561,6 +607,7 @@ export default function PlayersPage() {
   useEffect(() => {
      if (!selectedPlayerId) {
          setCommentsData([])
+       lastSuccessfulCommentsUrlRef.current = null
          return
      }
 
@@ -575,14 +622,14 @@ export default function PlayersPage() {
              url.searchParams.set("sentiment", commentsSentiment)
 
            const requestUrl = url.toString()
-           if (lastCommentsUrlRef.current === requestUrl) return
-           lastCommentsUrlRef.current = requestUrl
+           if (lastSuccessfulCommentsUrlRef.current === requestUrl) return
 
            const res = await fetch(requestUrl, {
                  signal: controller.signal
              })
              if (res.ok) {
                  const data = await res.json()
+               lastSuccessfulCommentsUrlRef.current = requestUrl
                  setCommentsData(data.comments || [])
              }
          } catch(e: unknown) {
@@ -1372,7 +1419,7 @@ export default function PlayersPage() {
                          <div className="truncate" title={row.text}>{row.text}</div>
                          <div className="mt-0.5 text-[10px] text-muted-foreground">
                              {[
-                                 new Date(row.date).toLocaleDateString(),
+                             formatSafeDateOnly(row.date),
                                  row.sentiment
                              ].filter(Boolean).join(" • ")}
                          </div>
